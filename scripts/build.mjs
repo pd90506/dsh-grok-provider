@@ -5,7 +5,8 @@ import * as esbuild from 'esbuild'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const hostEntry = join(root, 'src/host/index.ts')
-const clientEntry = join(root, 'src/client/settings.ts')
+const clientEntryTs = join(root, 'src/client/settings.ts')
+const clientEntryTsx = join(root, 'src/client/settings.tsx')
 const hostOut = join(root, 'dist/host/index.mjs')
 const clientOut = join(root, 'dist/client/client.js')
 const extraHostModules = [
@@ -54,15 +55,19 @@ for (const name of extraHostModules) {
   })
 }
 
-let clientPresent = false
+let clientEntry = clientEntryTsx
 try {
-  await access(clientEntry)
-  clientPresent = true
+  await access(clientEntryTsx)
 } catch {
-  clientPresent = false
+  try {
+    await access(clientEntryTs)
+    clientEntry = clientEntryTs
+  } catch {
+    clientEntry = ''
+  }
 }
 
-if (clientPresent) {
+if (clientEntry) {
   await esbuild.build({
     absWorkingDir: root,
     entryPoints: [clientEntry],
@@ -73,6 +78,8 @@ if (clientPresent) {
     target: 'es2022',
     sourcemap: true,
     logLevel: 'info',
+    jsx: 'automatic',
+    external: ['react', 'react/jsx-runtime', '@deepseek-ai/cordis'],
   })
 } else {
   await writeFile(

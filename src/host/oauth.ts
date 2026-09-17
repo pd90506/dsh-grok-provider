@@ -5,6 +5,7 @@ import {
   XAI_OAUTH_DEVICE_MAX_DURATION_MS,
   XAI_OAUTH_DEVICE_SLOW_DOWN_MS,
   XAI_OAUTH_DEVICE_URL,
+  XAI_OAUTH_SCOPE,
   XAI_OAUTH_TOKEN_URL,
 } from './constants.ts'
 import type { TokenSet } from './credentials.ts'
@@ -182,5 +183,70 @@ export async function pollDevice(options: {
       throw new Error(oauthErrorMessage(data, result.status))
     }
     return tokenSetFromPayload(data)
+  }
+}
+
+export function buildAuthorizationUrl(options: {
+  redirectUri: string
+  state: string
+  challenge: string
+}): string {
+  const url = new URL(XAI_OAUTH_AUTHORIZATION_URL)
+  url.searchParams.set('response_type', 'code')
+  url.searchParams.set('client_id', XAI_OAUTH_CLIENT_ID)
+  url.searchParams.set('redirect_uri', options.redirectUri)
+  url.searchParams.set('state', options.state)
+  url.searchParams.set('code_challenge', options.challenge)
+  url.searchParams.set('code_challenge_method', 'S256')
+  url.searchParams.set('scope', XAI_OAUTH_SCOPE)
+  return url.toString()
+}
+
+export type DeviceAuthorization = {
+  deviceCode: string
+  userCode: string
+  verificationUri: string
+  intervalMs: number
+}
+
+export async function requestDeviceCode(options: { fetch: FetchLike }): Promise<DeviceAuthorization> {
+  const response = await options.fetch(XAI_OAUTH_DEVICE_URL, {
+    method: 'POST',
+    headers: headers(),
+    body: new URLSearchParams({
+      client_id: XAI_OAUTH_CLIENT_ID,
+      scope: XAI_OAUTH_SCOPE,
+    }).toString(),
+    redirect: 'error',
+  })
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch {
+    throw new Error('xAI device request returned invalid JSON')
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('xAI device request returned invalid JSON')
+  }
+  const data = payload as Record<string, unknown>
+  if (!response.ok || typeof data.error === 'string') {
+    throw new Error(typeof data.error === 'string' ? data.error : `xAI device request failed with status ${response.status}`)
+  }
+  const deviceCode = data.device_code
+  const userCode = data.user_code
+  const verificationUri =
+    (typeof data.verification_uri_complete === 'string' && data.verification_uri_complete) ||
+    (typeof data.verification_uri === 'string' && data.verification_uri) ||
+    ''
+  if (typeof deviceCode !== 'string' || !deviceCode || typeof userCode !== 'string' || !userCode || !verificationUri) {
+    throw new Error('xAI device response was missing user or device codes')
+  }
+  const interval =
+    typeof data.interval === 'number' && Number.isFinite(data.interval) && data.interval > 0 ? data.interval : 5
+  return {
+    deviceCode,
+    userCode,
+    verificationUri,
+    intervalMs: interval * 1000,
   }
 }

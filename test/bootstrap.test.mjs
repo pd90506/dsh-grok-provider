@@ -12,7 +12,7 @@ test('package identity and host stub export llm-grok', async () => {
   assert.equal(pkg.version, '2.0.0-alpha.0')
   const mod = await import(new URL('../dist/host/index.mjs', import.meta.url).href)
   assert.equal(mod.name, 'llm-grok')
-  assert.deepEqual(mod.inject, ['llm'])
+  assert.deepEqual([...mod.inject], ['llm', 'settings'])
 })
 
 test('package.json does not advertise missing types and does not pack leftover docs', async () => {

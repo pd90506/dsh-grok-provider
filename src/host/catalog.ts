@@ -118,3 +118,22 @@ export class CatalogCache {
     return now - this.#fetchedAt < ttlMs
   }
 }
+
+export async function fetchModelsV2(options: {
+  accessToken: string
+  fetch: typeof fetch
+}): Promise<GrokModel[]> {
+  const response = await options.fetch(MODELS_V2_URL, {
+    method: 'GET',
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${options.accessToken}`,
+      'user-agent': 'dsh-grok-provider',
+    },
+    redirect: 'error',
+  })
+  if (!response.ok) {
+    throw new Error(`models-v2 request failed with status ${response.status}`)
+  }
+  return normalizeModelsV2(await response.json())
+}
