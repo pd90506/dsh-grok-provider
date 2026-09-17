@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "policy": "dsh-plugin-naming/v1",
+  "plugin": {
+    "namespace": "pd90506",
+    "name": "grok-provider",
+    "coordinate": "pd90506/grok-provider",
+    "packageName": "dsh-grok-provider"
+  },
+  "names": {
+    "pluginNames": ["llm-grok"],
+    "loaderIds": ["llm-grok"],
+    "services": [],
+    "tools": [],
+    "commands": [],
+    "skills": [],
+    "skillProviders": [],
+    "events": [],
+    "settingsNamespaces": ["llm-grok"],
+    "routes": []
+  }
+}
