@@ -8,14 +8,13 @@ const hostEntry = join(root, 'src/host/index.ts')
 const clientEntry = join(root, 'src/client/settings.ts')
 const hostOut = join(root, 'dist/host/index.mjs')
 const clientOut = join(root, 'dist/client/client.js')
+const extraHostModules = ['pkce', 'oauth', 'catalog', 'chunks', 'payload']
 
 await mkdir(dirname(hostOut), { recursive: true })
 await mkdir(dirname(clientOut), { recursive: true })
 
-await esbuild.build({
+const hostBuild = {
   absWorkingDir: root,
-  entryPoints: [hostEntry],
-  outfile: hostOut,
   bundle: true,
   platform: 'node',
   format: 'esm',
@@ -23,7 +22,27 @@ await esbuild.build({
   packages: 'external',
   sourcemap: true,
   logLevel: 'info',
+}
+
+await esbuild.build({
+  ...hostBuild,
+  entryPoints: [hostEntry],
+  outfile: hostOut,
 })
+
+for (const name of extraHostModules) {
+  const extraEntry = join(root, `src/host/${name}.ts`)
+  try {
+    await access(extraEntry)
+  } catch {
+    continue
+  }
+  await esbuild.build({
+    ...hostBuild,
+    entryPoints: [extraEntry],
+    outfile: join(root, `dist/host/${name}.mjs`),
+  })
+}
 
 let clientPresent = false
 try {
