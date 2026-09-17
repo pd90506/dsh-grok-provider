@@ -35,8 +35,9 @@ export function parseSseBlock(block: string): { event?: string; data: unknown } 
   return { event, data }
 }
 
-function emptyFinish() {
-  return {
+function* emptyFinish() {
+  yield { type: 'usage' as const, usage: { inputTokens: 0, outputTokens: 0 } }
+  yield {
     type: 'finish' as const,
     reason: {
       kind: 'error' as const,
@@ -161,7 +162,7 @@ export async function* streamResponses(options: {
       throw new LlmError(`provider HTTP ${response.status}`, 'ERROR', { status: response.status })
     }
     if (response.body == null) {
-      yield emptyFinish()
+      yield* emptyFinish()
       return
     }
 
@@ -184,7 +185,7 @@ export async function* streamResponses(options: {
     }
     if (!ctx.finished) {
       if (!emitted) {
-        yield emptyFinish()
+        yield* emptyFinish()
       } else {
         for (const chunk of incompleteStreamFinish(ctx)) yield chunk
       }

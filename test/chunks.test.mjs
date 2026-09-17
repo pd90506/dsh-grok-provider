@@ -181,13 +181,17 @@ test('function_call stream completes as tool-calls with usage before finish', ()
   assert.equal(done[finishIdx].reason.kind, 'tool-calls')
 })
 
-test('incompleteStreamFinish closes open blocks and emits error finish', () => {
+test('incompleteStreamFinish closes open blocks and emits usage then error finish', () => {
   const ctx = createMapperState()
   mapSseEvent({ event: 'response.output_text.delta', data: { delta: 'partial' } }, ctx)
   const chunks = incompleteStreamFinish(ctx)
   assert.equal(chunks[0].type, 'block-end')
-  assert.equal(chunks.at(-1).type, 'finish')
-  assert.equal(chunks.at(-1).reason.kind, 'error')
+  const usageIdx = chunks.findIndex((c) => c.type === 'usage')
+  const finishIdx = chunks.findIndex((c) => c.type === 'finish')
+  assert.ok(usageIdx >= 0 && finishIdx === usageIdx + 1)
+  assert.equal(chunks[usageIdx].usage.inputTokens, 0)
+  assert.equal(chunks[usageIdx].usage.outputTokens, 0)
+  assert.equal(chunks[finishIdx].reason.kind, 'error')
   assert.equal(ctx.finished, true)
 })
 

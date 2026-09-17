@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { buildResponsesBody } from '../dist/host/payload.mjs'
+
+const PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+)
 
 const base = {
   provider: 'grok',
@@ -58,8 +66,11 @@ test('empty stop list is ignored', () => {
   assert.equal(body.reasoning.encrypted_content, true)
 })
 
-test('maps bounded png/jpeg data URLs and https image_url; skips local files', () => {
+test('maps bounded png/jpeg data URLs, https image_url, and local png/jpeg files', async () => {
   const dataUrl = 'data:image/png;base64,aGVsbG8='
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-grok-img-'))
+  const pngPath = join(dir, 'dot.png')
+  await writeFile(pngPath, PNG_1X1)
   const body = buildResponsesBody({
     ...base,
     messages: [
@@ -69,15 +80,20 @@ test('maps bounded png/jpeg data URLs and https image_url; skips local files', (
           { type: 'text', text: 'see' },
           { type: 'image', image_url: dataUrl },
           { type: 'image_url', image_url: { url: 'https://example.com/a.jpg' } },
-          { type: 'image', url: '/tmp/huge.png' },
+          { type: 'image', url: pngPath },
+          { type: 'image', url: '/tmp/does-not-exist-dsh-grok.png' },
+          { type: 'image', attachment: { readonlyPath: pngPath, mediaType: 'image/png' } },
         ],
       },
     ],
   })
+  const expectedFile = `data:image/png;base64,${PNG_1X1.toString('base64')}`
   assert.deepEqual(body.input[0].content, [
     { type: 'input_text', text: 'see' },
     { type: 'input_image', image_url: dataUrl, detail: 'auto' },
     { type: 'input_image', image_url: 'https://example.com/a.jpg', detail: 'auto' },
+    { type: 'input_image', image_url: expectedFile, detail: 'auto' },
+    { type: 'input_image', image_url: expectedFile, detail: 'auto' },
   ])
 })
 

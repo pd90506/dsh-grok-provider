@@ -177,6 +177,7 @@ function finishKind(tag: ReturnType<typeof finishReasonFrom>, ctx: MapperState, 
 export function incompleteStreamFinish(ctx: MapperState): unknown[] {
   if (ctx.finished) return []
   const out = closeOpenBlocks(ctx)
+  out.push({ type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } })
   out.push({
     type: 'finish',
     reason: {
