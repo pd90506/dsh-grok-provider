@@ -8,7 +8,7 @@ const hostEntry = join(root, 'src/host/index.ts')
 const clientEntry = join(root, 'src/client/settings.ts')
 const hostOut = join(root, 'dist/host/index.mjs')
 const clientOut = join(root, 'dist/client/client.js')
-const extraHostModules = ['pkce', 'oauth', 'catalog', 'chunks', 'payload']
+const extraHostModules = ['pkce', 'oauth', 'catalog', 'chunks', 'payload', 'credentials']
 
 await mkdir(dirname(hostOut), { recursive: true })
 await mkdir(dirname(clientOut), { recursive: true })
