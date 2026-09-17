@@ -4,7 +4,7 @@
 
 ## 支持范围
 
-本安全策略对应 `dsh-grok-provider@1.0.5` 制品。账户操作使用 DSH `0.1.5-rc.2` 的共享 `/api` 精确 POST 路由；浏览器会话认证、Host/Origin 检查和请求体限制由主机保留。请求使用主机 schema 校验并拒绝路径/方法不匹配。官方 CLI 凭据、固定 xAI origin、Search、工具权限和流后不重放规则保持不变。Windows 真机外部浏览器弹出仍未验收。
+本安全策略对应 `dsh-grok-provider@1.1.0` 制品。账户操作使用 DSH `0.1.5-rc.2` 的共享 `/api` 精确 POST 路由；浏览器会话认证、Host/Origin 检查和请求体限制由主机保留。请求使用主机 schema 校验并拒绝路径/方法不匹配。官方 CLI 凭据、固定 xAI origin、Search、工具权限和流后不重放规则保持不变。`1.1.0` 新增 Linux x64 支持，复用 macOS 分支的文件权限、属主与 `O_NOFOLLOW` 校验；Linux 与 Windows 真机外部浏览器弹出均仍未验收。
 
 `1.0.3` 不把 HTTP 401/403 解释为 API Key 模式，也不自行刷新 OAuth grant：固定且有界的官方 `grok models` 子进程拥有刷新行为，插件随后重新读取并严格校验共享凭据。第二次拒绝仍为 `AUTH`。SSE source 的无状态 transport failure 和干净过早 EOF 与畸形事件分开；只有前两者能进入安全部分输出保留，status-bearing transport error、工具调用和所有 `INVALID_RESPONSE` 均不得被吞掉。部分内容不生成 replay metadata，提示不包含上游错误正文。
 

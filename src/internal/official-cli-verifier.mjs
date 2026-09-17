@@ -13,7 +13,7 @@ export async function verifyOfficialCliExecutable({ candidate, resolved, grokHom
     typeof candidate !== "string" ||
     typeof resolved !== "string" ||
     typeof grokHome !== "string" ||
-    (platform !== "darwin" && platform !== "win32") ||
+    (platform !== "darwin" && platform !== "linux" && platform !== "win32") ||
     !isOptionalAbortSignal(signal)
   ) throw new TypeError("Invalid official Grok CLI verification request")
 
@@ -34,7 +34,7 @@ export async function verifyOfficialCliExecutable({ candidate, resolved, grokHom
     const [resolvedInfo] = await waitForMetadata([stat(canonicalCandidate)], signal)
     if (!resolvedInfo.isFile()) throw new OfficialCliVerificationError()
 
-    if (platform === "darwin") {
+    if (platform === "darwin" || platform === "linux") {
       if (!candidateInfo.isFile() && !candidateInfo.isSymbolicLink()) throw new OfficialCliVerificationError()
       if ((resolvedInfo.mode & 0o111) === 0 || (resolvedInfo.mode & 0o022) !== 0) {
         throw new OfficialCliVerificationError()

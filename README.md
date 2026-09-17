@@ -4,11 +4,11 @@
 
 让 DeepSeek Harness 使用你已登录的官方 Grok Build 账号：动态模型发现、流式推理、图片输入、可选 Web/X Search、工具调用，以及账号额度与模型能力面板。
 
-> 非官方社区项目，与 xAI 或 DeepSeek Harness 官方无隶属关系。本说明对应 `dsh-grok-provider@1.0.5` 制品；`0.1.8` 曾发布后撤回且版本号不可复用。
+> 非官方社区项目，与 xAI 或 DeepSeek Harness 官方无隶属关系。本说明对应 `dsh-grok-provider@1.1.0` 制品；`0.1.8` 曾发布后撤回且版本号不可复用。
 
-`1.0.5` 修复更新到 DeepSeek Harness `0.1.5-rc.2` 后账户页面显示“服务不可用”、CLI 版本未知的问题。六个账户操作改用主机认证的共享 `/api/grok-auth/*` 路由，恢复登录状态、CLI 检测、模型目录与额度读取。
+`1.1.0` 把支持平台从 macOS/Windows 扩展到 Linux x64：官方 Grok Build CLI 本身已支持 Linux，插件此前只是从未在 Linux 上验证过，而不是存在技术障碍。文件权限、属主、`O_NOFOLLOW`、可执行文件校验等 POSIX 语义与 macOS 分支共用；Windows 专属分支不变。
 
-本 README 随 `1.0.5` 一起进入 npm tarball，下面的精确安装命令也固定为 `1.0.5`。上一份已完成供应链回读的版本为 `1.0.4`。
+本 README 随 `1.1.0` 一起进入 npm tarball，下面的精确安装命令也固定为 `1.1.0`。上一份已完成供应链回读的版本为 `1.0.5`。
 
 ## 它解决什么问题
 
@@ -30,7 +30,7 @@
 
 - DeepSeek Harness `0.1.5-rc.2`
 - Node.js `24.19.0` 或更高版本
-- macOS arm64 或 Windows x64
+- macOS arm64、Linux x64 或 Windows x64
 - 官方 Grok Build CLI（支持 `login --oauth`，并使用官方默认 Grok home）
 
 请从 [Grok Build 官方文档](https://docs.x.ai/build/overview) 安装 CLI，并先确认：
@@ -47,7 +47,7 @@ grok models
 安装精确版本：
 
 ```sh
-dsh plugin --profile web add dsh-grok-provider@1.0.5
+dsh plugin --profile web add dsh-grok-provider@1.1.0
 dsh web
 ```
 
@@ -192,13 +192,14 @@ dsh web
 - 最终源码完成两层脱敏真实账号复验：原始 Web/X 协议探针各 1 次请求、各 64 events，分别观察到对应 Search 且终态 `completed`；生产 adapter 共完成 5 次 Responses，direct Web/X 均为 `stop`，Harness 形状的本地 `x_search` call/result 续跑三轮依次为 `tool-calls`、`tool-calls`、`stop`，前两轮各 1 次本地调用。该续跑没有在同一 wire request 中同时放入 Harness `x_search` function definition 与 xAI `{ type: "x_search" }` server descriptor；`1.0.1` 后续才隔离出这一 HTTP 400 冲突。未保存结果、URL、prompt、身份或凭据；这些不是发布、OAuth 或 Windows 真机证据。
 - manifest/lock 已同步为 `1.0.0`；Node 24 全量测试为 245 项、243 pass、0 fail、2 项平台跳过，生产依赖审计为 0 漏洞，确定性 build/bundle、72 项 dry-run pack、秘密模式扫描与 diff 检查均通过。代码 PR #28、main CI run [`33308371009`](https://github.com/yoshino-xiao7/dsh-grok-provider/actions/runs/33308371009)、最终 release commit、双平台 final CI、唯一制品、精确授权及 Registry/signature/attestation/provenance 回读均已完成。
 
-| 项目 | `1.0.5` 兼容边界 |
+| 项目 | `1.1.0` 兼容边界 |
 | --- | --- |
 | DeepSeek Harness | 精确支持 `0.1.5-rc.2` |
 | Node.js | `>=24.19.0` |
 | macOS arm64 | 图片发送已完成真实 Harness 验证；`1.0.5` 验证 `0.1.5-rc.2` 账户 RPC |
 | Windows x64 | 代码路径与现有 slow-fake 保持不变；网络可达时由官方 CLI 生成 URL 并打开浏览器，该路径仍未完成 Windows 真机验收 |
-| macOS x64 / Linux | 不支持 |
+| Linux x64 | `1.1.0` 新增：官方 Grok CLI 本身支持 Linux，权限/属主/`O_NOFOLLOW`/可执行文件校验复用 macOS 分支；本仓库构建与全量单元测试已在 Linux x86_64 上通过，但浏览器 OAuth 登录尚未完成真机验收 |
+| macOS x64 | 不支持 |
 | Grok CLI | 不锁完整版本；严格校验官方路径、`login --oauth` 能力与生产 OIDC 凭据契约 |
 | 模型 | 当前账号目录中 backend 已被严格 codec 支持的全部模型 |
 

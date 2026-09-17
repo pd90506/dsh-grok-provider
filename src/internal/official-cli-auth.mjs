@@ -45,7 +45,7 @@ export function createOfficialCliAuth({
     !subprocess ||
     typeof subprocess.resolveExecutable !== "function" ||
     typeof subprocess.spawn !== "function" ||
-    (platform !== "darwin" && platform !== "win32") ||
+    (platform !== "darwin" && platform !== "linux" && platform !== "win32") ||
     typeof homeDir !== "string" ||
     homeDir.length === 0 ||
     typeof verifyExecutable !== "function" ||
@@ -409,7 +409,7 @@ function buildCliEnvironment(platform, homeDir) {
     if (/^(?:GROK_|XAI_|DYLD_|LD_)/iu.test(name)) environment[name] = undefined
   }
 
-  if (platform === "darwin") {
+  if (platform === "darwin" || platform === "linux") {
     environment.HOME = homeDir
     environment.PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
   } else {

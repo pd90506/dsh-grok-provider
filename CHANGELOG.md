@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0 - 2026-09-17
+
+- Add Linux x64 to the supported-platform allowlist alongside macOS and Windows. The official Grok Build CLI itself documents Linux support; this fork had previously restricted itself to macOS/Windows only because it had never been exercised on Linux hardware, not because of any technical incompatibility.
+- Treat Linux as a second POSIX platform next to macOS everywhere the code branched on `platform === "darwin"` for filesystem semantics: `official-cli-verifier.mjs` (owner-uid check, execute-bit/no-world-writable mode check, symlink-permitted executable resolution), `official-credential-loader.mjs` (0600 permission check, owner-uid check, `O_NOFOLLOW` open flag), and `official-cli-auth.mjs` (`bin/grok` executable name without `.exe`, `HOME`/`PATH` environment construction). The Windows-only branches (`path.win32`, `grok.exe`, `SystemRoot`/`COMSPEC`) are unchanged.
+- Extend the four `platform !== "darwin" && platform !== "win32"` allowlist checks (`src/host/index.mjs`, and the three `src/internal/official-*` modules) to also accept `"linux"`.
+- Extend `test/host-load.test.mjs`'s `hostApplySupported` gate and add dedicated Linux fixtures to `spikes/protocol/test/official-cli-verifier.test.mjs`, `official-credential-loader.test.mjs`, and `official-cli-auth.test.mjs`, mirroring the existing macOS coverage byte-for-byte where the underlying POSIX semantics are identical.
+- Verified on Linux x86_64 (Ubuntu 24.04, Node 24.20.0): dependency install, build, and the full test suite (now exercising the previously platform-skipped Host-apply tests for real) pass with 0 failures. Real-device browser OAuth login through the official CLI on Linux has not been exercised and is not claimed as verified, consistent with this project's existing disclosure standard for Windows.
+- Update `README.md` / `README.en.md` compatibility tables and prerequisites to list Linux x64, with the same "build/tests pass, browser login unverified" disclosure already used for Windows.
+
 ## 1.0.5 - 2026-09-13
 
 - Published from `49f08ba62bd9eb77fbf122413e08f28fc56d7207` after dual-platform CI `34734335106` via Trusted Publisher `34734462191`. The unique 81-file, 280,675-byte artifact is byte-identical across local, GitHub Release and npm; `latest=1.0.5`, Registry installation, signatures and provenance verify. SHA-256: `7e4772a8335ed9560db2ed59a34b9154f3f1ddc1a60be9707443648d6a72e77f`.

@@ -17,7 +17,7 @@ import {
 } from "../src/internal/responses-request-compiler.mjs"
 import { UnsupportedResponsesRequestError } from "../src/internal/responses-request.mjs"
 
-const hostApplySupported = process.platform === "darwin" || process.platform === "win32"
+const hostApplySupported = process.platform === "darwin" || process.platform === "linux" || process.platform === "win32"
 
 test("the Host loads against dsh-settings 0.1.5-rc.2 without deleted named helpers", async () => {
   const settings = await import("@deepseek-ai/dsh-settings")
@@ -29,7 +29,7 @@ test("the Host loads against dsh-settings 0.1.5-rc.2 without deleted named helpe
 })
 
 test("the Host plugin registers and cleanly removes the Grok provider in the real LLM runtime", {
-  skip: hostApplySupported ? false : "Host apply is macOS/Windows only",
+  skip: hostApplySupported ? false : "Host apply is macOS/Linux/Windows only",
 }, async () => {
   const ctx = new Context()
   const llmFiber = ctx.plugin(LlmRuntime)
@@ -45,7 +45,7 @@ test("the Host plugin registers and cleanly removes the Grok provider in the rea
 })
 
 test("the Host exposes one live llm-grok settings namespace with safe defaults", {
-  skip: hostApplySupported ? false : "Host apply is macOS/Windows only",
+  skip: hostApplySupported ? false : "Host apply is macOS/Linux/Windows only",
 }, async () => {
   const ctx = new Context()
   const settingsFiber = ctx.plugin(MemorySettingsProvider)
@@ -83,7 +83,7 @@ test("the Host exposes opt-in Search policy without a selectable authentication 
 })
 
 test("the Host applies Search settings to later calls while prepared calls keep their snapshot", {
-  skip: hostApplySupported ? false : "Host apply is macOS/Windows only",
+  skip: hostApplySupported ? false : "Host apply is macOS/Linux/Windows only",
 }, async () => {
   const originalFetch = globalThis.fetch
   const originalHome = process.env.HOME

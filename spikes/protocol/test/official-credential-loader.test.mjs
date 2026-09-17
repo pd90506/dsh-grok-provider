@@ -33,6 +33,24 @@ test("the macOS credential loader reads one owned 0600 regular file and rejects 
   await assert.rejects(loadAlias(), { name: "OfficialCredentialFileError" })
 })
 
+test("the Linux credential loader reads one owned 0600 regular file and rejects symlinks", {
+  skip: process.platform !== "linux",
+}, async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "dsh-grok-auth-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const authPath = path.join(root, "auth.json")
+  await writeFile(authPath, "fixture")
+  await chmod(authPath, 0o600)
+  const load = createOfficialCredentialLoader({ authPath, platform: "linux" })
+
+  assert.equal(new TextDecoder().decode(await load()), "fixture")
+
+  const alias = path.join(root, "alias.json")
+  await symlink("auth.json", alias)
+  const loadAlias = createOfficialCredentialLoader({ authPath: alias, platform: "linux" })
+  await assert.rejects(loadAlias(), { name: "OfficialCredentialFileError" })
+})
+
 test("the Windows credential loader reads the default regular credential file", {
   skip: process.platform !== "win32",
 }, async (t) => {

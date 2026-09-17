@@ -18,7 +18,7 @@ export function isSameOpenedFile(before, opened) {
 export function createOfficialCredentialLoader({ authPath, platform }) {
   if (
     typeof authPath !== "string" ||
-    (platform !== "darwin" && platform !== "win32") ||
+    (platform !== "darwin" && platform !== "linux" && platform !== "win32") ||
     !(platform === "win32" ? path.win32 : path.posix).isAbsolute(authPath)
   ) {
     throw new TypeError("Invalid official Grok credential path")
@@ -29,7 +29,7 @@ export function createOfficialCredentialLoader({ authPath, platform }) {
     try {
       const before = await lstat(authPath)
       if (!before.isFile() || before.isSymbolicLink()) throw new OfficialCredentialFileError()
-      const flags = platform === "darwin"
+      const flags = platform === "darwin" || platform === "linux"
         ? constants.O_RDONLY | constants.O_NOFOLLOW
         : constants.O_RDONLY
       handle = await open(authPath, flags)
@@ -42,7 +42,7 @@ export function createOfficialCredentialLoader({ authPath, platform }) {
       ) {
         throw new OfficialCredentialFileError()
       }
-      if (platform === "darwin") {
+      if (platform === "darwin" || platform === "linux") {
         if ((opened.mode & 0o777) !== 0o600) throw new OfficialCredentialFileError()
         if (typeof process.getuid === "function" && opened.uid !== process.getuid()) {
           throw new OfficialCredentialFileError()

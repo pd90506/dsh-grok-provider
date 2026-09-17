@@ -4,11 +4,11 @@
 
 Use an already authenticated official Grok Build account from DeepSeek Harness, with dynamic model discovery, streaming reasoning, image input, optional Web/X Search, tool calls, and an account quota/model capability dashboard.
 
-> Unofficial community project; not affiliated with xAI or DeepSeek Harness. This README describes the `dsh-grok-provider@1.0.5` artifact; version `0.1.8` was published and then withdrawn and cannot be reused.
+> Unofficial community project; not affiliated with xAI or DeepSeek Harness. This README describes the `dsh-grok-provider@1.1.0` artifact; version `0.1.8` was published and then withdrawn and cannot be reused.
 
-`1.0.5` repairs unavailable account services and unknown CLI versions after upgrading to DeepSeek Harness `0.1.5-rc.2`. Six account operations now use the host-authenticated shared `/api/grok-auth/*` routes, restoring status, CLI diagnostics, model discovery, and quota reads.
+`1.1.0` extends the supported-platform allowlist from macOS/Windows to Linux x64: the official Grok Build CLI already supports Linux, and this fork had simply never been exercised there rather than facing any technical blocker. The POSIX filesystem semantics (permissions, ownership, `O_NOFOLLOW`, executable verification) are shared with the macOS branch; the Windows-only branches are unchanged.
 
-This README is included in the `1.0.5` npm tarball, and the exact installation command below is pinned to `1.0.5`. The previous version with completed supply-chain readback is `1.0.4`.
+This README is included in the `1.1.0` npm tarball, and the exact installation command below is pinned to `1.1.0`. The previous version with completed supply-chain readback is `1.0.5`.
 
 ## What it provides
 
@@ -30,7 +30,7 @@ This README is included in the `1.0.5` npm tarball, and the exact installation c
 
 - DeepSeek Harness `0.1.5-rc.2`
 - Node.js `24.19.0` or newer
-- macOS arm64 or Windows x64
+- macOS arm64, Linux x64, or Windows x64
 - Official Grok Build CLI with `login --oauth` support and the default Grok home
 
 Install the CLI from the [official Grok Build documentation](https://docs.x.ai/build/overview), then verify:
@@ -47,7 +47,7 @@ When the network is reachable and OIDC discovery succeeds, the official CLI open
 Install the exact version:
 
 ```sh
-dsh plugin --profile web add dsh-grok-provider@1.0.5
+dsh plugin --profile web add dsh-grok-provider@1.1.0
 dsh web
 ```
 
@@ -192,13 +192,14 @@ Directory inclusion is not an endorsement by xAI or DeepSeek Harness. [Listing P
 - Two-layer redacted real-account verification passed against the final source: raw Web/X probes each completed one 64-event response, observed the requested Search kind, and reached `completed`; the production adapter completed 5 Responses calls, with direct Web/X both ending in `stop` and a Harness-shaped local `x_search` call/result continuation ending `tool-calls`, `tool-calls`, then `stop`, with one local call in each of the first two turns. That continuation did not place a Harness `x_search` function definition beside an xAI `{ type: "x_search" }` server descriptor in the same wire request; `1.0.1` later isolated that combination as an HTTP 400 conflict. No results, URLs, prompts, identity, or credentials were retained; this is not publication, OAuth, or real-device Windows evidence.
 - The manifest and lockfile are synchronized at `1.0.0`; the Node 24 suite reports 245 tests, 243 pass, 0 fail, and 2 platform skips. Production audit reports zero vulnerabilities, and the deterministic build/bundle comparison, 72-entry dry-run pack, secret scan, and diff check pass. Code PR #28, main CI run [`33308371009`](https://github.com/yoshino-xiao7/dsh-grok-provider/actions/runs/33308371009), the final release commit, dual-platform final CI, unique artifact, exact authorization, and Registry/signature/attestation/provenance readback are complete.
 
-| Item | `1.0.5` compatibility boundary |
+| Item | `1.1.0` compatibility boundary |
 | --- | --- |
 | DeepSeek Harness | Exact support for `0.1.5-rc.2` |
 | Node.js | `>=24.19.0` |
 | macOS arm64 | Image sending has real-Harness confirmation; `1.0.5` validates account RPC on `0.1.5-rc.2` |
 | Windows x64 | The code path and existing slow fakes are unchanged. On a reachable network the official CLI generates the URL and opens the browser, and that path still lacks real-device Windows acceptance |
-| macOS x64 / Linux | Unsupported |
+| Linux x64 | New in `1.1.0`: the official Grok CLI itself supports Linux; permission/ownership/`O_NOFOLLOW`/executable checks reuse the macOS branch. Build and the full unit suite pass on Linux x86_64, but browser OAuth login still lacks real-device acceptance |
+| macOS x64 | Unsupported |
 | Grok CLI | No full-version lock; official path, `login --oauth` capability, and production OIDC credential contract are enforced |
 | Models | Every account catalog model whose backend has a strict codec in this release |
 

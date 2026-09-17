@@ -38,8 +38,8 @@ export const Config = Schema.object({
 
 export function apply(ctx, config) {
   const platform = process.platform
-  if (platform !== "darwin" && platform !== "win32") {
-    throw new TypeError("dsh-grok-provider supports macOS and Windows")
+  if (platform !== "darwin" && platform !== "linux" && platform !== "win32") {
+    throw new TypeError("dsh-grok-provider supports macOS, Linux, and Windows")
   }
 
   let currentConfig = () => config
@@ -67,7 +67,7 @@ export function apply(ctx, config) {
       fetch: globalThis.fetch,
       attributionHeaders,
       clientIdentifier: "dsh-grok-provider",
-      clientVersion: "1.0.5",
+      clientVersion: "1.1.0",
     }),
     createAdapter: ({ getGeneration }) => createGrokAdapter({
       getGeneration,

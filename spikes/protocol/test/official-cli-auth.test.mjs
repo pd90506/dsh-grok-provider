@@ -478,6 +478,52 @@ test("official browser login uses one verified default executable and fixed argv
   assert.deepEqual(waited, [0, 1, 2])
 })
 
+test("Linux Grok CLI reaches fixed OAuth login after capability discovery with a POSIX environment", async () => {
+  const resolved = []
+  const spawned = []
+  const outputs = [
+    "grok 1.0.5 (5115b46bc909)\n",
+    "Usage: grok login [OPTIONS]\n\nOptions:\n      --oauth  Use browser OAuth\n",
+    "Login completed\n",
+  ]
+  const subprocess = {
+    async resolveExecutable(command, env, signal) {
+      resolved.push({ command, env, signal })
+      return "/home/fixture/.grok/bin/grok"
+    },
+    spawn(spec) {
+      const index = spawned.length
+      spawned.push(spec)
+      return {
+        done: Promise.resolve({ exitCode: 0, signal: null }),
+        collected: {
+          stdout: { readFrom: () => ({ text: outputs[index], lossy: false }) },
+          stderr: { readFrom: () => ({ text: "", lossy: false }) },
+        },
+        async waitForExit() { return true },
+        terminate() {},
+      }
+    },
+  }
+  const auth = createOfficialCliAuth({
+    subprocess,
+    platform: "linux",
+    homeDir: "/home/fixture",
+    verifyExecutable: async () => {},
+  })
+
+  assert.deepEqual(await auth.login(), { kind: "succeeded" })
+  assert.equal(resolved[0].command, "/home/fixture/.grok/bin/grok")
+  assert.deepEqual(spawned.map((spec) => spec.argv), [
+    ["/home/fixture/.grok/bin/grok", "--version"],
+    ["/home/fixture/.grok/bin/grok", "login", "--help"],
+    ["/home/fixture/.grok/bin/grok", "login", "--oauth"],
+  ])
+  assert.equal(spawned.every((spec) => spec.cwd === "/home/fixture/.grok"), true)
+  assert.equal(spawned.every((spec) => spec.env.HOME === "/home/fixture"), true)
+  assert.equal(spawned.every((spec) => spec.env.PATH === "/usr/bin:/bin:/usr/sbin:/sbin"), true)
+})
+
 test("OIDC discovery timeout becomes one closed login failure without exposing CLI output", async () => {
   const executable = "C:\\Users\\fixture\\.grok\\bin\\grok.exe"
   const spawned = []
