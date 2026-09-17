@@ -17,10 +17,8 @@
     "node": ">=20"
   },
   "main": "./dist/host/index.mjs",
-  "types": "./dist/host/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/host/index.d.ts",
       "default": "./dist/host/index.mjs"
     },
     "./client": {
@@ -44,7 +42,6 @@
   },
   "files": [
     "dist",
-    "docs",
     "grok-provider.patch.yml",
     "dsh-plugin.naming.json",
     "README.md",
@@ -75,6 +72,6 @@
     "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
     "@deepseek-ai/dsh-settings": "0.1.5-rc.2",
     "@deepseek-ai/schemastery": "3.18.2",
-    "esbuild": "^0.25.0"
+    "esbuild": "0.25.12"
   }
 }
