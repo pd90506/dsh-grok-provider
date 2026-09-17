@@ -105,3 +105,77 @@ test('finishReasonFrom maps empty stop output to empty', () => {
   assert.equal(finishReasonFrom({ status: 'failed' }), 'error')
   assert.equal(finishReasonFrom({ status: 'cancelled' }), 'aborted')
 })
+
+test('object function_call_arguments.delta is JSON.stringified', () => {
+  const ctx = createMapperState()
+  mapSseEvent(
+    {
+      event: 'response.output_item.added',
+      data: { item: { type: 'function_call', id: 'call_1', name: 'lookup' } },
+    },
+    ctx,
+  )
+  const chunks = mapSseEvent(
+    { event: 'response.function_call_arguments.delta', data: { delta: { q: 'x' } } },
+    ctx,
+  )
+  assert.equal(chunks[0].type, 'tool-call-delta')
+  assert.equal(chunks[0].argumentsDelta, '{"q":"x"}')
+})
+
+test('empty completed stream emits usage then EMPTY_RESPONSE finish', () => {
+  const ctx = createMapperState()
+  const done = mapSseEvent(
+    {
+      event: 'response.completed',
+      data: {
+        response: {
+          status: 'completed',
+          usage: { input_tokens: 4, output_tokens: 0 },
+          output: [],
+        },
+      },
+    },
+    ctx,
+  )
+  assert.equal(done.length, 2)
+  assert.equal(done[0].type, 'usage')
+  assert.deepEqual(done[0].usage, { inputTokens: 4, outputTokens: 0 })
+  assert.equal(done[1].type, 'finish')
+  assert.equal(done[1].reason.kind, 'error')
+  assert.equal(done[1].reason.failure.code, 'EMPTY_RESPONSE')
+})
+
+test('function_call stream completes as tool-calls with usage before finish', () => {
+  const ctx = createMapperState()
+  mapSseEvent(
+    {
+      event: 'response.output_item.added',
+      data: { item: { type: 'function_call', id: 'call_1', name: 'lookup' } },
+    },
+    ctx,
+  )
+  mapSseEvent(
+    { event: 'response.function_call_arguments.delta', data: { delta: '{"q":"a"}' } },
+    ctx,
+  )
+  const done = mapSseEvent(
+    {
+      event: 'response.completed',
+      data: {
+        response: {
+          status: 'completed',
+          usage: { input_tokens: 2, output_tokens: 8 },
+          output: [{ type: 'function_call', id: 'call_1', name: 'lookup', arguments: '{"q":"a"}' }],
+        },
+      },
+    },
+    ctx,
+  )
+  const types = done.map((c) => c.type)
+  const usageIdx = types.indexOf('usage')
+  const finishIdx = types.indexOf('finish')
+  assert.ok(types.includes('block-end'))
+  assert.ok(usageIdx >= 0 && finishIdx === usageIdx + 1)
+  assert.equal(done[finishIdx].reason.kind, 'tool-calls')
+})

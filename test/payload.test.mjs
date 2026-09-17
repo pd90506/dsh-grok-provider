@@ -55,3 +55,34 @@ test('empty stop list is ignored', () => {
   const body = buildResponsesBody({ ...base, stop: [] })
   assert.equal(body.stream, true)
 })
+
+test('assistant text plus multiple tool-call blocks emit all items', () => {
+  const body = buildResponsesBody({
+    ...base,
+    messages: [
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'calling tools' },
+          { type: 'tool-call', id: 'c1', name: 'lookup', arguments: '{"q":"a"}' },
+          { type: 'tool-call', id: 'c2', name: 'other', arguments: { x: 1 } },
+        ],
+      },
+    ],
+  })
+  assert.deepEqual(body.input, [
+    { role: 'assistant', content: 'calling tools' },
+    {
+      type: 'function_call',
+      call_id: 'c1',
+      name: 'lookup',
+      arguments: '{"q":"a"}',
+    },
+    {
+      type: 'function_call',
+      call_id: 'c2',
+      name: 'other',
+      arguments: '{"x":1}',
+    },
+  ])
+})

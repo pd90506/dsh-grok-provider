@@ -176,7 +176,15 @@ export function mapSseEvent(
   }
 
   if (name === 'response.function_call_arguments.delta') {
-    const delta = typeof data.delta === 'string' ? data.delta : ''
+    let delta = ''
+    if (typeof data.delta === 'string') delta = data.delta
+    else if (data.delta !== undefined) {
+      try {
+        delta = JSON.stringify(data.delta)
+      } catch {
+        delta = ''
+      }
+    }
     if (!delta) return []
     const chunks: unknown[] = []
     if (ctx.toolIndex === undefined) {

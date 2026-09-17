@@ -28,40 +28,56 @@ function textFromContent(content: unknown): string {
   return parts.join('')
 }
 
-function mapMessage(message: unknown): Record<string, unknown> | undefined {
-  if (!message || typeof message !== 'object') return undefined
+function encodeArguments(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value === undefined) return '{}'
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return '{}'
+  }
+}
+
+function mapFunctionCall(block: Record<string, unknown>): Record<string, unknown> {
+  return {
+    type: 'function_call',
+    call_id: typeof block.id === 'string' ? block.id : typeof block.call_id === 'string' ? block.call_id : '',
+    name: typeof block.name === 'string' ? block.name : '',
+    arguments: encodeArguments(block.arguments),
+  }
+}
+
+function mapMessage(message: unknown): Record<string, unknown>[] {
+  if (!message || typeof message !== 'object') return []
   const rec = message as Record<string, unknown>
   const role = rec.role
   if (role === 'tool') {
     const callId =
       (rec.source && typeof rec.source === 'object' && (rec.source as Record<string, unknown>).callId) ||
       rec.toolCallId
-    return {
-      type: 'function_call_output',
-      call_id: typeof callId === 'string' ? callId : '',
-      output: textFromContent(rec.content),
-    }
+    return [
+      {
+        type: 'function_call_output',
+        call_id: typeof callId === 'string' ? callId : '',
+        output: textFromContent(rec.content),
+      },
+    ]
   }
-  if (role === 'assistant') {
-    const content = rec.content
-    if (Array.isArray(content)) {
-      const toolCall = content.find(
-        (b) => b && typeof b === 'object' && (b as Record<string, unknown>).type === 'tool-call',
-      ) as Record<string, unknown> | undefined
-      if (toolCall) {
-        return {
-          type: 'function_call',
-          call_id: typeof toolCall.id === 'string' ? toolCall.id : '',
-          name: typeof toolCall.name === 'string' ? toolCall.name : '',
-          arguments: typeof toolCall.arguments === 'string' ? toolCall.arguments : '{}',
-        }
-      }
+  if (role === 'assistant' && Array.isArray(rec.content)) {
+    const items: Record<string, unknown>[] = []
+    const text = textFromContent(rec.content)
+    if (text) items.push({ role: 'assistant', content: text })
+    for (const block of rec.content) {
+      if (!block || typeof block !== 'object') continue
+      const b = block as Record<string, unknown>
+      if (b.type === 'tool-call') items.push(mapFunctionCall(b))
     }
+    if (items.length > 0) return items
   }
   if (role === 'system' || role === 'user' || role === 'assistant') {
-    return { role, content: textFromContent(rec.content) }
+    return [{ role, content: textFromContent(rec.content) }]
   }
-  return undefined
+  return []
 }
 
 export function buildResponsesBody(options: GenerateOptionsLike): Record<string, unknown> {
@@ -71,8 +87,7 @@ export function buildResponsesBody(options: GenerateOptionsLike): Record<string,
 
   const input: Record<string, unknown>[] = []
   for (const message of options.messages ?? []) {
-    const mapped = mapMessage(message)
-    if (mapped) input.push(mapped)
+    input.push(...mapMessage(message))
   }
 
   const body: Record<string, unknown> = {
