@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 
 test('host export name is llm-grok and Config defaults streamIdleTimeoutMs', async () => {
@@ -38,6 +40,9 @@ test('apply registers GrokAdapter on grok and installs settings section', async 
     inject(keys, fn) {
       if (keys.every((key) => ctx[key])) fn(ctx)
     },
+    effect(fn) {
+      return fn()
+    },
   }
   mod.apply(ctx, { streamIdleTimeoutMs: 300000 })
   assert.equal(calls[0].providers[0], 'grok')
@@ -55,4 +60,31 @@ test('client bundle registers Grok settings and never mentions access tokens', a
   assert.match(src, /llm-grok\/logout/)
   assert.match(src, /llm-grok\/refresh-catalog/)
   assert.doesNotMatch(src, /accessToken|refreshToken|access_token/)
+  assert.match(src, /loginPending|setInterval/)
+})
+
+test('logout stays logged out even when ~/.grok/auth.json exists until reuse-cli', async () => {
+  const { GrokSession } = await import(new URL('../dist/host/index.mjs', import.meta.url).href)
+  const { XAI_GROK_CLI_AUTH_SCOPE_KEY } = await import(new URL('../dist/host/constants.mjs', import.meta.url).href)
+  const homeDir = join(tmpdir(), `dsh-grok-logout-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+  await mkdir(join(homeDir, '.grok'), { recursive: true })
+  await writeFile(
+    join(homeDir, '.grok', 'auth.json'),
+    JSON.stringify({
+      [XAI_GROK_CLI_AUTH_SCOPE_KEY]: {
+        key: 'cli-access',
+        refresh_token: 'cli-refresh',
+        expires_at: Date.now() + 60 * 60 * 1000,
+      },
+    }),
+  )
+  const session = new GrokSession({ homeDir })
+  assert.equal(await session.getAccessToken(), 'cli-access')
+  assert.equal((await session.snapshot()).loggedIn, true)
+  await session.logout()
+  assert.equal(await session.getAccessToken(), null)
+  assert.equal((await session.snapshot()).loggedIn, false)
+  await session.reuseCli()
+  assert.equal(await session.getAccessToken(), 'cli-access')
+  assert.equal((await session.snapshot()).loggedIn, true)
 })

@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -43,35 +43,50 @@ export class CredentialStore {
     this.filePath = join(this.homeDir, PLUGIN_AUTH_DIR, PLUGIN_AUTH_FILE)
   }
 
-  async read(): Promise<TokenSet | null> {
+  async #readRaw(): Promise<Record<string, unknown> | null> {
     try {
       const raw = JSON.parse(await readFile(this.filePath, 'utf8')) as unknown
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
-      const rec = raw as Record<string, unknown>
-      if (typeof rec.accessToken !== 'string' || !rec.accessToken) return null
-      if (typeof rec.expiresAt !== 'number' || !Number.isFinite(rec.expiresAt)) return null
-      return asTokenSet(rec.accessToken, rec.refreshToken, rec.expiresAt)
+      return raw as Record<string, unknown>
     } catch {
       return null
     }
   }
 
-  async write(t: TokenSet): Promise<void> {
+  async read(): Promise<TokenSet | null> {
+    const rec = await this.#readRaw()
+    if (!rec) return null
+    if (typeof rec.accessToken !== 'string' || !rec.accessToken) return null
+    if (typeof rec.expiresAt !== 'number' || !Number.isFinite(rec.expiresAt)) return null
+    return asTokenSet(rec.accessToken, rec.refreshToken, rec.expiresAt)
+  }
+
+  /** After logout this is true until an explicit plugin login writes tokens again. */
+  async skipCli(): Promise<boolean> {
+    const rec = await this.#readRaw()
+    return rec?.skipCli === true
+  }
+
+  async #persist(doc: Record<string, unknown>): Promise<void> {
     const dir = join(this.homeDir, PLUGIN_AUTH_DIR)
     await mkdir(dir, { recursive: true, mode: 0o700 })
-    await writeFile(this.filePath, `${JSON.stringify(t, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+    await writeFile(this.filePath, `${JSON.stringify(doc, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
     if (process.platform !== 'win32') {
       await chmod(dir, 0o700)
       await chmod(this.filePath, 0o600)
     }
   }
 
+  async write(t: TokenSet): Promise<void> {
+    await this.#persist({ ...t, skipCli: false })
+  }
+
   async clear(): Promise<void> {
-    try {
-      await unlink(this.filePath)
-    } catch {
-      // missing is fine
-    }
+    await this.#persist({ skipCli: true })
+  }
+
+  async allowCliReuse(): Promise<void> {
+    await this.#persist({ skipCli: false })
   }
 }
 

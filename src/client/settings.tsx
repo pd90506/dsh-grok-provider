@@ -7,6 +7,7 @@ export const inject = ['slots', 'connection']
 type PublicStatus = {
   loggedIn: boolean
   catalogCount: number
+  loginPending?: boolean
   lastError?: string
   deviceUserCode?: string
   deviceVerificationUri?: string
@@ -44,6 +45,15 @@ function GrokSettingsSection(props: { rpc?: Rpc }): ReactNode {
       setError(err instanceof Error ? err.message : 'status failed')
     })
   }, [refresh])
+
+  const pending = Boolean(status?.loginPending && !status.loggedIn)
+  useEffect(() => {
+    if (!pending) return
+    const timer = setInterval(() => {
+      void refresh().catch(() => {})
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [pending, refresh])
 
   const run = async (endpoint: string, payload: unknown = {}) => {
     if (!rpc) return

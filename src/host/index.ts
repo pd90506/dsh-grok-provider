@@ -1,5 +1,4 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
 import Schema from '@deepseek-ai/schemastery'
 import type { Context } from '@deepseek-ai/cordis'
@@ -37,6 +36,7 @@ export type Config = {
 export type GrokPublicStatus = {
   loggedIn: boolean
   catalogCount: number
+  loginPending: boolean
   lastError?: string
   deviceUserCode?: string
   deviceVerificationUri?: string
@@ -63,9 +63,12 @@ function openBrowser(url: string): void {
   }
 }
 
-class GrokSession {
+export class GrokSession {
   readonly catalog = new CatalogCache()
-  readonly store = new CredentialStore()
+  readonly store: CredentialStore
+  constructor(options: { homeDir?: string } = {}) {
+    this.store = new CredentialStore({ homeDir: options.homeDir })
+  }
   lastError: string | undefined
   deviceUserCode: string | undefined
   deviceVerificationUri: string | undefined
@@ -84,6 +87,7 @@ class GrokSession {
     const status: GrokPublicStatus = {
       loggedIn: false,
       catalogCount: this.catalog.get()?.length ?? fallbackCatalog().length,
+      loginPending: Boolean(this.deviceUserCode || this.authorizationUrl),
     }
     if (this.lastError) status.lastError = this.lastError
     if (this.deviceUserCode) status.deviceUserCode = this.deviceUserCode
@@ -104,7 +108,9 @@ class GrokSession {
 
   async getAccessToken(): Promise<string | null> {
     let tokens = await this.store.read()
-    if (!tokens) tokens = await readGrokCliAuth(homedir())
+    if (!tokens && !(await this.store.skipCli())) {
+      tokens = await readGrokCliAuth(this.store.homeDir)
+    }
     if (!tokens) return null
     const skew = 60_000
     if (tokens.expiresAt > Date.now() + skew) return tokens.accessToken
@@ -231,11 +237,22 @@ class GrokSession {
   }
 
   async logout(): Promise<GrokPublicStatus> {
-    this.#deviceAbort?.abort()
-    this.stopBrowser()
+    this.dispose()
     await this.store.clear()
     this.lastError = undefined
     return this.snapshot()
+  }
+
+  async reuseCli(): Promise<GrokPublicStatus> {
+    await this.store.allowCliReuse()
+    this.lastError = undefined
+    return this.snapshot()
+  }
+
+  dispose(): void {
+    this.#deviceAbort?.abort()
+    this.#deviceAbort = undefined
+    this.stopBrowser()
   }
 }
 
@@ -257,32 +274,38 @@ export function apply(ctx: Context, config: Config) {
     setSource: () => {},
     onChange: () => {},
   })
+  ctx.effect(() => () => {
+    session.dispose()
+  })
   ctx.inject(['connection'], (wired) => {
-    wired.connection.rpc.intercept(
-      '/api',
-      (endpoint) => endpoint.startsWith('llm-grok/'),
-      async (endpoint, payload) => {
-        try {
-          if (endpoint === 'llm-grok/status') return ok(await session.snapshot())
-          if (endpoint === 'llm-grok/login-browser') return ok(await session.startBrowserLogin())
-          if (endpoint === 'llm-grok/login-device') return ok(await session.startDeviceLogin())
-          if (endpoint === 'llm-grok/complete-browser') {
-            const url = asRecord(payload).url
-            if (typeof url !== 'string') return fail('INVALID_REQUEST', 'complete-browser requires url')
-            return ok(await session.completeBrowserRedirect(url))
+    ctx.effect(() =>
+      wired.connection.rpc.intercept(
+        '/api',
+        (endpoint) => endpoint.startsWith('llm-grok/'),
+        async (endpoint, payload) => {
+          try {
+            if (endpoint === 'llm-grok/status') return ok(await session.snapshot())
+            if (endpoint === 'llm-grok/login-browser') return ok(await session.startBrowserLogin())
+            if (endpoint === 'llm-grok/login-device') return ok(await session.startDeviceLogin())
+            if (endpoint === 'llm-grok/complete-browser') {
+              const url = asRecord(payload).url
+              if (typeof url !== 'string') return fail('INVALID_REQUEST', 'complete-browser requires url')
+              return ok(await session.completeBrowserRedirect(url))
+            }
+            if (endpoint === 'llm-grok/logout') return ok(await session.logout())
+            if (endpoint === 'llm-grok/reuse-cli') return ok(await session.reuseCli())
+            if (endpoint === 'llm-grok/refresh-catalog') {
+              await session.refreshCatalog()
+              return ok(await session.snapshot())
+            }
+            return fail('NOT_FOUND', `unknown endpoint ${endpoint}`)
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'request failed'
+            session.lastError = message
+            return fail('GROK', message)
           }
-          if (endpoint === 'llm-grok/logout') return ok(await session.logout())
-          if (endpoint === 'llm-grok/refresh-catalog') {
-            await session.refreshCatalog()
-            return ok(await session.snapshot())
-          }
-          return fail('NOT_FOUND', `unknown endpoint ${endpoint}`)
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'request failed'
-          session.lastError = message
-          return fail('GROK', message)
-        }
-      },
+        },
+      ),
     )
   })
 }
