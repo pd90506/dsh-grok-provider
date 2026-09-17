@@ -97,11 +97,19 @@ export class CatalogCache {
   #fetchedAt: number | undefined
 
   get(): GrokModel[] | undefined {
-    return this.#models
+    return this.#models?.map((model) => ({
+      ...model,
+      reasoningEfforts: [...model.reasoningEfforts],
+      input: [...model.input],
+    }))
   }
 
   set(models: GrokModel[], fetchedAt: number): void {
-    this.#models = models
+    this.#models = models.map((model) => ({
+      ...model,
+      reasoningEfforts: [...model.reasoningEfforts],
+      input: [...model.input],
+    }))
     this.#fetchedAt = fetchedAt
   }
 
