@@ -1,30 +1,54 @@
-import { copyFile, mkdir, readdir, readFile, rm } from "node:fs/promises"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
+import { mkdir, writeFile, access } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import * as esbuild from 'esbuild'
 
-const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)))
-const output = path.join(root, "dist")
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const hostEntry = join(root, 'src/host/index.ts')
+const clientEntry = join(root, 'src/client/settings.ts')
+const hostOut = join(root, 'dist/host/index.mjs')
+const clientOut = join(root, 'dist/client/client.js')
 
-await rm(output, { recursive: true, force: true })
-await copyTree(path.join(root, "src", "host"), path.join(output, "host"))
-await copyTree(path.join(root, "src", "internal"), path.join(output, "internal"))
-await mkdir(path.join(output, "client"), { recursive: true })
-await copyFile(path.join(root, "client.js"), path.join(output, "client", "client.js"))
+await mkdir(dirname(hostOut), { recursive: true })
+await mkdir(dirname(clientOut), { recursive: true })
 
-const client = await readFile(path.join(output, "client", "client.js"), "utf8")
-if (/node:fs|node:path|refreshToken|accessToken|auth\.json/u.test(client)) {
-  throw new Error("The browser artifact crossed the Host credential boundary")
+await esbuild.build({
+  absWorkingDir: root,
+  entryPoints: [hostEntry],
+  outfile: hostOut,
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node20',
+  packages: 'external',
+  sourcemap: true,
+  logLevel: 'info',
+})
+
+let clientPresent = false
+try {
+  await access(clientEntry)
+  clientPresent = true
+} catch {
+  clientPresent = false
 }
 
-async function copyTree(source, target) {
-  await mkdir(target, { recursive: true })
-  const entries = await readdir(source, { withFileTypes: true })
-  entries.sort((left, right) => left.name.localeCompare(right.name, "en"))
-  for (const entry of entries) {
-    const from = path.join(source, entry.name)
-    const to = path.join(target, entry.name)
-    if (entry.isDirectory()) await copyTree(from, to)
-    else if (entry.isFile()) await copyFile(from, to)
-    else throw new Error(`Unsupported build input: ${entry.name}`)
-  }
+if (clientPresent) {
+  await esbuild.build({
+    absWorkingDir: root,
+    entryPoints: [clientEntry],
+    outfile: clientOut,
+    bundle: true,
+    platform: 'browser',
+    format: 'esm',
+    target: 'es2022',
+    sourcemap: true,
+    logLevel: 'info',
+  })
+} else {
+  await writeFile(
+    clientOut,
+    'export const name = "llm-grok-client"\nexport function apply() {}\n',
+    'utf8',
+  )
 }

@@ -1,3 +1,4 @@
+# Host composition: load this package's root export as plugin id llm-grok.
 - insert:
     - id: llm-grok
       name: dsh-grok-provider

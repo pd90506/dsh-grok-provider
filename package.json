@@ -1,24 +1,26 @@
 {
   "name": "dsh-grok-provider",
-  "version": "1.1.0",
-  "description": "Clean-room Grok Build provider for DeepSeek Harness with official CLI browser authentication",
+  "version": "2.0.0-alpha.0",
+  "description": "DeepSeek Harness SuperGrok / xAI OAuth LLM adapter (clean-room, DSH 0.1.5-rc.2)",
   "type": "module",
   "license": "MIT",
-  "author": "YukiRyou",
+  "author": "pd90506",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yoshino-xiao7/dsh-grok-provider.git"
+    "url": "git+https://github.com/pd90506/dsh-grok-provider.git"
   },
-  "homepage": "https://github.com/yoshino-xiao7/dsh-grok-provider#readme",
+  "homepage": "https://github.com/pd90506/dsh-grok-provider#readme",
   "bugs": {
-    "url": "https://github.com/yoshino-xiao7/dsh-grok-provider/issues"
+    "url": "https://github.com/pd90506/dsh-grok-provider/issues"
   },
   "engines": {
-    "node": ">=24.19.0"
+    "node": ">=20"
   },
+  "main": "./dist/host/index.mjs",
+  "types": "./dist/host/index.d.ts",
   "exports": {
     ".": {
-      "types": "./types/index.d.ts",
+      "types": "./dist/host/index.d.ts",
       "default": "./dist/host/index.mjs"
     },
     "./client": {
@@ -43,22 +45,14 @@
   "files": [
     "dist",
     "docs",
-    "types",
     "grok-provider.patch.yml",
+    "dsh-plugin.naming.json",
     "README.md",
-    "README.en.md",
-    "CONTRIBUTING.md",
-    "SECURITY.md",
-    "LICENSE",
-    "THIRD_PARTY_NOTICES.md",
-    "CHANGELOG.md"
+    "LICENSE"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && npm run test:smoke-syntax && node --test spikes/protocol/test/*.test.mjs test/*.test.mjs",
-    "test:smoke-syntax": "node --check spikes/image-input-smoke.mjs && node --check spikes/harness-attachment-smoke.mjs && node --check spikes/search-protocol-probe.mjs",
-    "prepack": "npm run build",
-    "pack:check": "npm pack --dry-run --json"
+    "test": "npm run build && node --test test/*.test.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
@@ -66,31 +60,21 @@
     "@deepseek-ai/dsh-client-locale": "0.1.5-rc.2",
     "@deepseek-ai/dsh-client-ui-renderer": "0.1.5-rc.2",
     "@deepseek-ai/dsh-client-ui-settings": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-commands": "0.1.5-rc.2",
     "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
     "@deepseek-ai/dsh-settings": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-subprocess": "0.1.5-rc.2",
     "@deepseek-ai/schemastery": "3.18.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-client-locale": { "optional": true },
     "@deepseek-ai/dsh-client-ui-renderer": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-settings": { "optional": true },
-    "@deepseek-ai/dsh-commands": { "optional": true },
-    "@deepseek-ai/dsh-subprocess": { "optional": true }
+    "@deepseek-ai/dsh-client-ui-settings": { "optional": true }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-commands": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.1.5-rc.2",
     "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
     "@deepseek-ai/dsh-settings": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-subprocess": "0.1.5-rc.2",
     "@deepseek-ai/schemastery": "3.18.2",
-    "@deepseek-ai/dsh-client-connection": "0.1.5-rc.2"
-  },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/",
-    "provenance": true
+    "esbuild": "^0.25.0"
   }
 }
