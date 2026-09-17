@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import {
   CatalogCache,
   fallbackCatalog,
+  fetchModelsV2,
+  MODELS_V2_URL,
   normalizeModelsV2,
 } from '../dist/host/catalog.mjs'
+import { PACKAGE_IDENTITY } from '../dist/host/identity.mjs'
 
 test('normalizeModelsV2 returns empty array for empty or invalid json', () => {
   assert.deepEqual(normalizeModelsV2(null), [])
@@ -58,4 +62,28 @@ test('CatalogCache TTL freshness is true inside window and false after', () => {
   assert.equal(cache.isFresh(1_000 + 15 * 60 * 1000 - 1), true)
   assert.equal(cache.isFresh(1_000 + 15 * 60 * 1000), false)
   assert.equal(cache.isFresh(1_000 + 60_000, 30_000), false)
+})
+
+test('fetchModelsV2 sends attribution headers, bearer, and redirect error', async () => {
+  const expected = attributionHeaders(PACKAGE_IDENTITY)
+  let url
+  let headers
+  let redirect
+  const models = await fetchModelsV2({
+    accessToken: 'tok',
+    fetch: async (input, init) => {
+      url = String(input)
+      headers = new Headers(init.headers)
+      redirect = init.redirect
+      return new Response(JSON.stringify({ data: [{ id: 'grok-4.6', name: 'Grok 4.6' }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    },
+  })
+  assert.equal(url, MODELS_V2_URL)
+  assert.equal(headers.get('authorization'), 'Bearer tok')
+  assert.equal(headers.get('user-agent'), expected['user-agent'])
+  assert.equal(redirect, 'error')
+  assert.equal(models[0].id, 'grok-4.6')
 })

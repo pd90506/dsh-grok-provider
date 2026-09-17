@@ -3,7 +3,9 @@ import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import { generatePkce } from '../dist/host/pkce.mjs'
+import { PACKAGE_IDENTITY } from '../dist/host/identity.mjs'
 import {
   CredentialStore,
   readGrokCliAuth,
@@ -60,6 +62,14 @@ test('exchangeCode posts authorization_code and returns access+refresh TokenSet'
   assert.match(body, /code=auth-code/)
   assert.match(body, /code_verifier=/)
   assert.match(body, /redirect_uri=/)
+})
+
+test('CredentialStore skipCli defaults true when no plugin tokens exist', async () => {
+  const homeDir = await tempHome('dsh-grok-skipcli')
+  const store = new CredentialStore({ homeDir })
+  assert.equal(await store.skipCli(), true)
+  await store.allowCliReuse()
+  assert.equal(await store.skipCli(), false)
 })
 
 test('CredentialStore write then read round-trips TokenSet under homeDir', async () => {
@@ -165,11 +175,14 @@ test('pinned OAuth URLs are first-party xAI endpoints', () => {
   assert.equal(XAI_OAUTH_DEVICE_URL, 'https://auth.x.ai/oauth2/device/code')
 })
 
-test('token POST sends User-Agent dsh-grok-provider', async () => {
+test('token POST sends attributionHeaders User-Agent and redirect:error', async () => {
   let ua
+  let redirect
+  const expected = attributionHeaders(PACKAGE_IDENTITY)
   const fetchImpl = async (_url, init) => {
     const h = init.headers
     ua = h?.['user-agent'] ?? h?.['User-Agent'] ?? h?.get?.('user-agent')
+    redirect = init.redirect
     return jsonResponse({
       access_token: 'acc',
       refresh_token: 'ref',
@@ -178,7 +191,8 @@ test('token POST sends User-Agent dsh-grok-provider', async () => {
     })
   }
   await refreshTokens({ refreshToken: 'r', fetch: fetchImpl })
-  assert.equal(ua, 'dsh-grok-provider')
+  assert.equal(ua, expected['user-agent'])
+  assert.equal(redirect, 'error')
 })
 
 test('exchangeCode throws OAuth error string and does not return TokenSet', async () => {

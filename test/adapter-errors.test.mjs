@@ -242,3 +242,82 @@ test('POSTs Responses to cli-chat-proxy with bearer', async () => {
   assert.equal(authorization, 'Bearer secret-token')
   assert.ok(chunks.some((c) => c.type === 'text-delta' && c.text === 'ok'))
 })
+
+test('Responses POST uses redirect error', async () => {
+  let redirect
+  const adapter = new GrokAdapter({
+    getAccessToken: async () => 'tok',
+    fetch: async (_url, init) => {
+      redirect = init.redirect
+      return sseResponse([
+        { event: 'response.output_text.delta', data: { delta: 'ok' } },
+        {
+          event: 'response.completed',
+          data: {
+            response: {
+              status: 'completed',
+              usage: { input_tokens: 1, output_tokens: 1 },
+              output: [{ type: 'message', content: [{ type: 'output_text', text: 'ok' }] }],
+            },
+          },
+        },
+      ])
+    },
+  })
+  await collect(adapter.stream(baseOptions))
+  assert.equal(redirect, 'error')
+})
+
+test('HTTP context-window error maps to CONTEXT_WINDOW_EXCEEDED', async () => {
+  const adapter = new GrokAdapter({
+    getAccessToken: async () => 'tok',
+    fetch: async () =>
+      new Response('input is too long for the model context window', { status: 400 }),
+  })
+  await assert.rejects(
+    () => collect(adapter.stream(baseOptions)),
+    (err) => {
+      assert.ok(err instanceof LlmError)
+      assert.equal(err.code, 'CONTEXT_WINDOW_EXCEEDED')
+      return true
+    },
+  )
+})
+
+test('unknown model ids are UNSUPPORTED on resolveModel and stream', async () => {
+  const adapter = new GrokAdapter({
+    getAccessToken: async () => 'tok',
+    fetch: async () => {
+      throw new Error('must not fetch')
+    },
+  })
+  await assert.rejects(
+    () => adapter.resolveModel('grok', 'not-a-real-model'),
+    (err) => {
+      assert.ok(err instanceof LlmError)
+      assert.equal(err.code, 'UNSUPPORTED')
+      return true
+    },
+  )
+  await assert.rejects(
+    () => collect(adapter.stream({ ...baseOptions, model: 'not-a-real-model' })),
+    (err) => {
+      assert.ok(err instanceof LlmError)
+      assert.equal(err.code, 'UNSUPPORTED')
+      return true
+    },
+  )
+})
+
+test('SSE EOF after partial deltas emits error finish', async () => {
+  const adapter = new GrokAdapter({
+    getAccessToken: async () => 'tok',
+    fetch: async () =>
+      sseResponse([{ event: 'response.output_text.delta', data: { delta: 'partial' } }]),
+  })
+  const chunks = await collect(adapter.stream(baseOptions))
+  assert.ok(chunks.some((c) => c.type === 'text-delta'))
+  const finish = chunks.at(-1)
+  assert.equal(finish.type, 'finish')
+  assert.equal(finish.reason.kind, 'error')
+})

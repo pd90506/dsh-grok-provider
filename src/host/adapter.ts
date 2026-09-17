@@ -62,15 +62,16 @@ export class GrokAdapter extends LlmAdapter {
     }))
   }
 
+  #requireModel(model: string): GrokModel {
+    const found = listing(this.#catalog).find((m) => m.id === model)
+    if (!found) {
+      throw new LlmError(`unsupported model ${model}`, 'UNSUPPORTED')
+    }
+    return found.id === 'grok-4.6' ? mergeFallback(found) : found
+  }
+
   override async resolveModel(provider: string, model: string) {
-    const found = listing(this.#catalog).find((m) => m.id === model) ?? mergeFallback({
-      id: model,
-      name: model,
-      contextWindow: 0,
-      reasoningEfforts: [],
-      input: ['text'],
-    })
-    const resolved = found.id === 'grok-4.6' ? mergeFallback(found) : found
+    const resolved = this.#requireModel(model)
     return {
       provider,
       id: resolved.id,
@@ -89,6 +90,7 @@ export class GrokAdapter extends LlmAdapter {
     if (!token) {
       throw new LlmError('not authenticated', 'AUTH')
     }
+    this.#requireModel(options.model)
     try {
       yield* streamResponses({
         fetch: this.#fetch,

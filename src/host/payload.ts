@@ -13,6 +13,53 @@ function throwUnsupported(message: string): never {
   throw err
 }
 
+const MAX_IMAGE_URL_CHARS = 400 * 1024
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  return value as Record<string, unknown>
+}
+
+function boundedImageUrl(raw: string): string | undefined {
+  const url = raw.trim()
+  if (!url) return undefined
+  if (url.length > MAX_IMAGE_URL_CHARS) return undefined
+  if (/^data:image\/(png|jpe?g);base64,/i.test(url)) return url
+  if (/^https?:\/\//i.test(url)) return url
+  return undefined
+}
+
+function imageUrlFromBlock(block: Record<string, unknown>): string | undefined {
+  if (typeof block.image_url === 'string') return boundedImageUrl(block.image_url)
+  const nested = asRecord(block.image_url)
+  if (nested && typeof nested.url === 'string') return boundedImageUrl(nested.url)
+  if (typeof block.url === 'string') return boundedImageUrl(block.url)
+  const source = asRecord(block.source)
+  if (source && typeof source.url === 'string') return boundedImageUrl(source.url)
+  return undefined
+}
+
+function userContentParts(content: unknown): unknown {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return textFromContent(content)
+  const parts: Record<string, unknown>[] = []
+  for (const block of content) {
+    const rec = asRecord(block)
+    if (!rec) continue
+    if (rec.type === 'text' && typeof rec.text === 'string') {
+      parts.push({ type: 'input_text', text: rec.text })
+      continue
+    }
+    if (rec.type === 'image' || rec.type === 'image_url' || rec.type === 'input_image') {
+      const url = imageUrlFromBlock(rec)
+      if (url) parts.push({ type: 'input_image', image_url: url, detail: 'auto' })
+    }
+  }
+  if (parts.length === 0) return textFromContent(content)
+  if (parts.length === 1 && parts[0].type === 'input_text') return parts[0].text
+  return parts
+}
+
 function textFromContent(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
@@ -74,7 +121,10 @@ function mapMessage(message: unknown): Record<string, unknown>[] {
     }
     if (items.length > 0) return items
   }
-  if (role === 'system' || role === 'user' || role === 'assistant') {
+  if (role === 'user') {
+    return [{ role: 'user', content: userContentParts(rec.content) }]
+  }
+  if (role === 'system' || role === 'assistant') {
     return [{ role, content: textFromContent(rec.content) }]
   }
   return []
@@ -95,13 +145,14 @@ export function buildResponsesBody(options: GenerateOptionsLike): Record<string,
     stream: true,
     store: false,
     input,
+    reasoning: {
+      encrypted_content: true,
+      ...(options.reasoningEffort ? { effort: options.reasoningEffort } : {}),
+    },
   }
 
   if (typeof options.system === 'string' && options.system.length > 0) {
     body.instructions = options.system
-  }
-  if (options.reasoningEffort) {
-    body.reasoning = { effort: options.reasoningEffort }
   }
   if (options.tools && options.tools.length > 0) {
     body.tools = options.tools.map((tool) => ({

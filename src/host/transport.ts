@@ -1,34 +1,12 @@
-import { attributionHeaders, LlmError } from '@deepseek-ai/dsh-llm'
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { createMapperState, mapSseEvent } from './chunks.ts'
+import { attributionHeaders, isContextWindowExceededError, LlmError } from '@deepseek-ai/dsh-llm'
+import { createMapperState, incompleteStreamFinish, mapSseEvent } from './chunks.ts'
 import { PROXY_BASE, STREAM_IDLE_TIMEOUT_MS } from './constants.ts'
+import { PACKAGE_IDENTITY, type PackageIdentity } from './identity.ts'
 import { buildResponsesBody, type GenerateOptionsLike } from './payload.ts'
 
+export { PACKAGE_IDENTITY, type PackageIdentity } from './identity.ts'
+
 export type FetchLike = typeof fetch
-
-export type PackageIdentity = {
-  product: string
-  version: string
-  url: string
-}
-
-function loadIdentity(): PackageIdentity {
-  const pkgPath = join(dirname(fileURLToPath(import.meta.url)), '../../package.json')
-  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
-    name: string
-    version: string
-    homepage?: string
-  }
-  return {
-    product: pkg.name,
-    version: pkg.version,
-    url: pkg.homepage ?? 'https://github.com/pd90506/dsh-grok-provider',
-  }
-}
-
-export const PACKAGE_IDENTITY = loadIdentity()
 
 function isAbortError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
@@ -162,6 +140,7 @@ export async function* streamResponses(options: {
         headers,
         body: JSON.stringify(buildResponsesBody(options.generate)),
         signal: request.signal,
+        redirect: 'error',
       })
     } catch (err) {
       if (isAbortError(err) || request.signal.aborted || caller?.aborted) {
@@ -174,6 +153,11 @@ export async function* streamResponses(options: {
       throw new LlmError('unauthorized', 'AUTH', { status: 401 })
     }
     if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      const detail = `HTTP ${response.status} ${text}`
+      if (isContextWindowExceededError(detail) || isContextWindowExceededError(text)) {
+        throw new LlmError('context window exceeded', 'CONTEXT_WINDOW_EXCEEDED', { status: response.status })
+      }
       throw new LlmError(`provider HTTP ${response.status}`, 'ERROR', { status: response.status })
     }
     if (response.body == null) {
@@ -198,8 +182,12 @@ export async function* streamResponses(options: {
       }
       throw new LlmError(err instanceof Error ? err.message : 'stream error', 'ERROR', { cause: err })
     }
-    if (!emitted && !ctx.finished) {
-      yield emptyFinish()
+    if (!ctx.finished) {
+      if (!emitted) {
+        yield emptyFinish()
+      } else {
+        for (const chunk of incompleteStreamFinish(ctx)) yield chunk
+      }
     }
   } finally {
     clearIdle()

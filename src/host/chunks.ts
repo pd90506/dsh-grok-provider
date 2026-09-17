@@ -1,3 +1,5 @@
+import { isContextWindowExceededError } from '@deepseek-ai/dsh-llm'
+
 export type MapperState = {
   finished: boolean
   nextIndex: number
@@ -9,6 +11,7 @@ export type MapperState = {
   text: string
   reasoning: string
   toolArguments: string
+  replayState: unknown
 }
 
 export function createMapperState(): MapperState {
@@ -23,6 +26,7 @@ export function createMapperState(): MapperState {
     text: '',
     reasoning: '',
     toolArguments: '',
+    replayState: undefined,
   }
 }
 
@@ -76,6 +80,40 @@ function usageFrom(raw: unknown): { inputTokens: number; outputTokens: number } 
   return { inputTokens: input, outputTokens: output }
 }
 
+function extractEncryptedContent(source: unknown): string | undefined {
+  const rec = asRecord(source)
+  if (!rec) return undefined
+  if (typeof rec.encrypted_content === 'string' && rec.encrypted_content) return rec.encrypted_content
+  const output = rec.output
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      const found = extractEncryptedContent(item)
+      if (found) return found
+    }
+  }
+  const content = rec.content
+  if (Array.isArray(content)) {
+    for (const item of content) {
+      const found = extractEncryptedContent(item)
+      if (found) return found
+    }
+  }
+  return undefined
+}
+
+function rememberReplay(ctx: MapperState, source: unknown): void {
+  if (ctx.replayState) return
+  const encrypted = extractEncryptedContent(source)
+  if (encrypted) ctx.replayState = { encrypted_content: encrypted }
+}
+
+function providerErrorDetail(response: unknown): string {
+  const rec = asRecord(response) ?? {}
+  const err = asRecord(rec.error)
+  const parts = [rec.message, rec.code, rec.status, err?.message, err?.code, err?.type]
+  return parts.filter((p) => typeof p === 'string' || typeof p === 'number').join(' ')
+}
+
 function closeOpenBlocks(ctx: MapperState): unknown[] {
   const out: unknown[] = []
   if (ctx.reasoningIndex !== undefined) {
@@ -110,7 +148,7 @@ function closeOpenBlocks(ctx: MapperState): unknown[] {
   return out
 }
 
-function finishKind(tag: ReturnType<typeof finishReasonFrom>, ctx: MapperState) {
+function finishKind(tag: ReturnType<typeof finishReasonFrom>, ctx: MapperState, response?: unknown) {
   if (tag === 'empty') {
     return {
       kind: 'error' as const,
@@ -118,6 +156,13 @@ function finishKind(tag: ReturnType<typeof finishReasonFrom>, ctx: MapperState) 
     }
   }
   if (tag === 'error') {
+    const detail = providerErrorDetail(response)
+    if (isContextWindowExceededError(detail)) {
+      return {
+        kind: 'error' as const,
+        failure: { message: 'context window exceeded', code: 'CONTEXT_WINDOW_EXCEEDED' },
+      }
+    }
     return { kind: 'error' as const, failure: { message: 'provider error', code: 'ERROR' } }
   }
   if (tag === 'aborted') {
@@ -127,6 +172,20 @@ function finishKind(tag: ReturnType<typeof finishReasonFrom>, ctx: MapperState) 
     return { kind: 'tool-calls' as const }
   }
   return { kind: 'stop' as const }
+}
+
+export function incompleteStreamFinish(ctx: MapperState): unknown[] {
+  if (ctx.finished) return []
+  const out = closeOpenBlocks(ctx)
+  out.push({
+    type: 'finish',
+    reason: {
+      kind: 'error' as const,
+      failure: { message: 'stream ended without finish', code: 'ERROR' },
+    },
+  })
+  ctx.finished = true
+  return out
 }
 
 export function mapSseEvent(
@@ -204,12 +263,21 @@ export function mapSseEvent(
     return chunks
   }
 
+  if (name === 'response.reasoning.encrypted_content' || name === 'response.reasoning_text.done') {
+    rememberReplay(ctx, data)
+    return []
+  }
+
   if (name === 'response.completed' || name === 'response.failed' || name === 'done') {
     const response = asRecord(data.response) ?? data
+    rememberReplay(ctx, response)
+    rememberReplay(ctx, data)
     const tag = finishReasonFrom(response)
     const out = closeOpenBlocks(ctx)
     out.push({ type: 'usage', usage: usageFrom(response.usage) })
-    out.push({ type: 'finish', reason: finishKind(tag, ctx) })
+    const finish: Record<string, unknown> = { type: 'finish', reason: finishKind(tag, ctx, response) }
+    if (ctx.replayState) finish.replayState = ctx.replayState
+    out.push(finish)
     ctx.finished = true
     return out
   }

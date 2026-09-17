@@ -1,4 +1,6 @@
+import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import { FALLBACK_MODEL, PROXY_BASE } from './constants.ts'
+import { PACKAGE_IDENTITY, type PackageIdentity } from './identity.ts'
 
 export const MODELS_V2_URL = `${PROXY_BASE}/models-v2`
 
@@ -122,13 +124,15 @@ export class CatalogCache {
 export async function fetchModelsV2(options: {
   accessToken: string
   fetch: typeof fetch
+  identity?: PackageIdentity
 }): Promise<GrokModel[]> {
+  const identity = options.identity ?? PACKAGE_IDENTITY
   const response = await options.fetch(MODELS_V2_URL, {
     method: 'GET',
     headers: {
+      ...attributionHeaders(identity),
       accept: 'application/json',
       authorization: `Bearer ${options.accessToken}`,
-      'user-agent': 'dsh-grok-provider',
     },
     redirect: 'error',
   })

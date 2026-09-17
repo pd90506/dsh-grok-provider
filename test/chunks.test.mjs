@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import {
   createMapperState,
   finishReasonFrom,
+  incompleteStreamFinish,
   mapSseEvent,
 } from '../dist/host/chunks.mjs'
 
@@ -178,4 +179,56 @@ test('function_call stream completes as tool-calls with usage before finish', ()
   assert.ok(types.includes('block-end'))
   assert.ok(usageIdx >= 0 && finishIdx === usageIdx + 1)
   assert.equal(done[finishIdx].reason.kind, 'tool-calls')
+})
+
+test('incompleteStreamFinish closes open blocks and emits error finish', () => {
+  const ctx = createMapperState()
+  mapSseEvent({ event: 'response.output_text.delta', data: { delta: 'partial' } }, ctx)
+  const chunks = incompleteStreamFinish(ctx)
+  assert.equal(chunks[0].type, 'block-end')
+  assert.equal(chunks.at(-1).type, 'finish')
+  assert.equal(chunks.at(-1).reason.kind, 'error')
+  assert.equal(ctx.finished, true)
+})
+
+test('completed finish includes smallest replayState when encrypted_content is present', () => {
+  const ctx = createMapperState()
+  mapSseEvent({ event: 'response.output_text.delta', data: { delta: 'ok' } }, ctx)
+  const done = mapSseEvent(
+    {
+      event: 'response.completed',
+      data: {
+        response: {
+          status: 'completed',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          output: [
+            { type: 'message', content: [{ type: 'output_text', text: 'ok' }] },
+            { type: 'reasoning', encrypted_content: 'enc-blob' },
+          ],
+        },
+      },
+    },
+    ctx,
+  )
+  const finish = done.find((c) => c.type === 'finish')
+  assert.deepEqual(finish.replayState, { encrypted_content: 'enc-blob' })
+})
+
+test('failed context-window response maps to CONTEXT_WINDOW_EXCEEDED', () => {
+  const ctx = createMapperState()
+  const done = mapSseEvent(
+    {
+      event: 'response.failed',
+      data: {
+        response: {
+          status: 'failed',
+          error: { message: 'input is too long for the model context window' },
+          usage: { input_tokens: 9, output_tokens: 0 },
+        },
+      },
+    },
+    ctx,
+  )
+  const finish = done.find((c) => c.type === 'finish')
+  assert.equal(finish.reason.failure.code, 'CONTEXT_WINDOW_EXCEEDED')
 })

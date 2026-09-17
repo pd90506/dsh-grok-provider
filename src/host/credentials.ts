@@ -61,10 +61,14 @@ export class CredentialStore {
     return asTokenSet(rec.accessToken, rec.refreshToken, rec.expiresAt)
   }
 
-  /** After logout this is true until an explicit plugin login writes tokens again. */
+  /**
+   * True when CLI `~/.grok/auth.json` must not be used.
+   * Missing plugin auth file defaults to true (no auto-reuse on first run).
+   */
   async skipCli(): Promise<boolean> {
     const rec = await this.#readRaw()
-    return rec?.skipCli === true
+    if (!rec) return true
+    return rec.skipCli === true
   }
 
   async #persist(doc: Record<string, unknown>): Promise<void> {

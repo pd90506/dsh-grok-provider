@@ -19,6 +19,7 @@ const extraHostModules = [
   'constants',
   'transport',
   'adapter',
+  'identity',
 ]
 
 await mkdir(dirname(hostOut), { recursive: true })

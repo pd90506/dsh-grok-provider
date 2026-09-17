@@ -90,7 +90,12 @@ function GrokSettingsSection(props: { rpc?: Rpc }): ReactNode {
         </p>
       ) : null}
       {status?.authorizationUrl ? (
-        <p>If the browser did not open, visit the authorization URL shown in your terminal Host logs — this page never displays tokens.</p>
+        <p>
+          <label>
+            Authorization URL
+            <input readOnly value={status.authorizationUrl} />
+          </label>
+        </p>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
       <p>
@@ -105,6 +110,9 @@ function GrokSettingsSection(props: { rpc?: Rpc }): ReactNode {
         </button>{' '}
         <button type="button" disabled={busy || !loggedIn} onClick={() => void run('llm-grok/refresh-catalog')}>
           Refresh catalog
+        </button>{' '}
+        <button type="button" disabled={busy || loggedIn} onClick={() => void run('llm-grok/reuse-cli')}>
+          Use Grok CLI credentials
         </button>
       </p>
       <p>

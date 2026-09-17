@@ -1,3 +1,5 @@
+import { attributionHeaders } from '@deepseek-ai/dsh-llm'
+import { PACKAGE_IDENTITY } from './identity.ts'
 import {
   XAI_OAUTH_AUTHORIZATION_URL,
   XAI_OAUTH_CLIENT_ID,
@@ -28,9 +30,9 @@ type TokenPayload = {
 
 function headers(): Record<string, string> {
   return {
+    ...attributionHeaders(PACKAGE_IDENTITY),
     'content-type': 'application/x-www-form-urlencoded',
     accept: 'application/json',
-    'user-agent': 'dsh-grok-provider',
   }
 }
 

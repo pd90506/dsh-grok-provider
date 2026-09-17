@@ -59,6 +59,8 @@ test('client bundle registers Grok settings and never mentions access tokens', a
   assert.match(src, /llm-grok\/login-device/)
   assert.match(src, /llm-grok\/logout/)
   assert.match(src, /llm-grok\/refresh-catalog/)
+  assert.match(src, /llm-grok\/reuse-cli/)
+  assert.match(src, /Authorization URL/)
   assert.doesNotMatch(src, /accessToken|refreshToken|access_token/)
   assert.match(src, /loginPending|setInterval/)
 })
@@ -79,6 +81,9 @@ test('logout stays logged out even when ~/.grok/auth.json exists until reuse-cli
     }),
   )
   const session = new GrokSession({ homeDir })
+  assert.equal(await session.getAccessToken(), null)
+  assert.equal((await session.snapshot()).loggedIn, false)
+  await session.reuseCli()
   assert.equal(await session.getAccessToken(), 'cli-access')
   assert.equal((await session.snapshot()).loggedIn, true)
   await session.logout()
