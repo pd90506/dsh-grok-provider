@@ -57,31 +57,45 @@ export function parseSseBlock(block: string): { event?: string; data: unknown } 
   return { event, data }
 }
 
+function emptyFinish() {
+  return {
+    type: 'finish' as const,
+    reason: {
+      kind: 'error' as const,
+      failure: { message: 'empty response', code: 'EMPTY_RESPONSE' },
+    },
+  }
+}
+
+function classifyAbort(request: AbortController, caller?: AbortSignal): never {
+  if (caller?.aborted) {
+    throw new LlmError('aborted', 'ABORTED')
+  }
+  throw new LlmError('stream idle timeout', 'TIMEOUT')
+}
+
 async function* iterateSse(
-  body: ReadableStream<Uint8Array> | null,
-  signal: AbortSignal | undefined,
-  idleMs: number,
+  body: ReadableStream<Uint8Array>,
+  request: AbortController,
+  caller: AbortSignal | undefined,
+  armIdle: () => void,
 ): AsyncGenerator<{ event?: string; data: unknown }> {
-  if (!body) return
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   try {
     while (true) {
-      if (signal?.aborted) {
-        throw new LlmError('aborted', 'ABORTED')
-      }
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const idle = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new LlmError('stream idle timeout', 'TIMEOUT'))
-        }, idleMs)
-      })
+      if (caller?.aborted) throw new LlmError('aborted', 'ABORTED')
+      if (request.signal.aborted) classifyAbort(request, caller)
+      armIdle()
       let chunk: ReadableStreamReadResult<Uint8Array>
       try {
-        chunk = await Promise.race([reader.read(), idle])
-      } finally {
-        if (timer) clearTimeout(timer)
+        chunk = await reader.read()
+      } catch (err) {
+        if (isAbortError(err) || request.signal.aborted || caller?.aborted) {
+          classifyAbort(request, caller)
+        }
+        throw err
       }
       if (chunk.done) {
         if (buffer.trim()) {
@@ -112,45 +126,83 @@ export async function* streamResponses(options: {
 }): AsyncGenerator<unknown> {
   const idleTimeoutMs = options.idleTimeoutMs ?? STREAM_IDLE_TIMEOUT_MS
   const identity = options.identity ?? PACKAGE_IDENTITY
+  const caller = options.generate.signal
+  const request = new AbortController()
+  const onCallerAbort = () => {
+    request.abort()
+  }
+  caller?.addEventListener('abort', onCallerAbort, { once: true })
+  if (caller?.aborted) request.abort()
+
+  let idleTimer: ReturnType<typeof setTimeout> | undefined
+  const clearIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = undefined
+  }
+  const armIdle = () => {
+    clearIdle()
+    idleTimer = setTimeout(() => {
+      request.abort()
+    }, idleTimeoutMs)
+  }
+
   const headers = {
     ...attributionHeaders(identity),
     authorization: `Bearer ${options.accessToken}`,
     'content-type': 'application/json',
     accept: 'text/event-stream',
   }
+
   let response: Response
+  armIdle()
   try {
-    response = await options.fetch(`${PROXY_BASE}/responses`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(buildResponsesBody(options.generate)),
-      signal: options.generate.signal,
-    })
-  } catch (err) {
-    if (isAbortError(err) || options.generate.signal?.aborted) {
-      throw new LlmError('aborted', 'ABORTED', { cause: err })
+    try {
+      response = await options.fetch(`${PROXY_BASE}/responses`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(buildResponsesBody(options.generate)),
+        signal: request.signal,
+      })
+    } catch (err) {
+      if (isAbortError(err) || request.signal.aborted || caller?.aborted) {
+        classifyAbort(request, caller)
+      }
+      throw new LlmError(err instanceof Error ? err.message : 'transport error', 'ERROR', { cause: err })
     }
-    throw new LlmError(err instanceof Error ? err.message : 'transport error', 'ERROR', { cause: err })
-  }
 
-  if (response.status === 401) {
-    throw new LlmError('unauthorized', 'AUTH', { status: 401 })
-  }
-  if (!response.ok) {
-    throw new LlmError(`provider HTTP ${response.status}`, 'ERROR', { status: response.status })
-  }
+    if (response.status === 401) {
+      throw new LlmError('unauthorized', 'AUTH', { status: 401 })
+    }
+    if (!response.ok) {
+      throw new LlmError(`provider HTTP ${response.status}`, 'ERROR', { status: response.status })
+    }
+    if (response.body == null) {
+      yield emptyFinish()
+      return
+    }
 
-  const ctx = createMapperState()
-  try {
-    for await (const event of iterateSse(response.body, options.generate.signal, idleTimeoutMs)) {
-      const chunks = mapSseEvent(event, ctx)
-      for (const chunk of chunks) yield chunk
+    const ctx = createMapperState()
+    let emitted = false
+    try {
+      for await (const event of iterateSse(response.body, request, caller, armIdle)) {
+        const chunks = mapSseEvent(event, ctx)
+        for (const chunk of chunks) {
+          emitted = true
+          yield chunk
+        }
+      }
+    } catch (err) {
+      if (err instanceof LlmError) throw err
+      if (isAbortError(err) || request.signal.aborted || caller?.aborted) {
+        classifyAbort(request, caller)
+      }
+      throw new LlmError(err instanceof Error ? err.message : 'stream error', 'ERROR', { cause: err })
     }
-  } catch (err) {
-    if (err instanceof LlmError) throw err
-    if (isAbortError(err) || options.generate.signal?.aborted) {
-      throw new LlmError('aborted', 'ABORTED', { cause: err })
+    if (!emitted && !ctx.finished) {
+      yield emptyFinish()
     }
-    throw new LlmError(err instanceof Error ? err.message : 'stream error', 'ERROR', { cause: err })
+  } finally {
+    clearIdle()
+    caller?.removeEventListener('abort', onCallerAbort)
   }
 }

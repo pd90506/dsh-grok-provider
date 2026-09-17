@@ -144,6 +144,73 @@ test('abort signal maps to ABORTED', async () => {
   )
 })
 
+test('hanging fetch times out as TIMEOUT and aborts the request controller', async () => {
+  let fetchSignal
+  const adapter = new GrokAdapter({
+    getAccessToken: async () => 'tok',
+    idleTimeoutMs: 30,
+    fetch: async (_url, init) => {
+      fetchSignal = init.signal
+      await new Promise((_, reject) => {
+        init.signal?.addEventListener('abort', () => {
+          const err = new Error('aborted')
+          err.name = 'AbortError'
+          reject(err)
+        })
+      })
+    },
+  })
+  const started = Date.now()
+  await assert.rejects(
+    () => collect(adapter.stream(baseOptions)),
+    (err) => {
+      assert.ok(err instanceof LlmError)
+      assert.equal(err.code, 'TIMEOUT')
+      return true
+    },
+  )
+  assert.ok(Date.now() - started < 2000)
+  assert.equal(fetchSignal?.aborted, true)
+})
+
+test('caller abort during hanging fetch is ABORTED not TIMEOUT', async () => {
+  const controller = new AbortController()
+  const adapter = new GrokAdapter({
+    getAccessToken: async () => 'tok',
+    idleTimeoutMs: 5_000,
+    fetch: async (_url, init) => {
+      queueMicrotask(() => controller.abort())
+      await new Promise((_, reject) => {
+        init.signal?.addEventListener('abort', () => {
+          const err = new Error('aborted')
+          err.name = 'AbortError'
+          reject(err)
+        })
+      })
+    },
+  })
+  await assert.rejects(
+    () => collect(adapter.stream({ ...baseOptions, signal: controller.signal })),
+    (err) => {
+      assert.ok(err instanceof LlmError)
+      assert.equal(err.code, 'ABORTED')
+      return true
+    },
+  )
+})
+
+test('HTTP 200 with null body maps to EMPTY_RESPONSE', async () => {
+  const adapter = new GrokAdapter({
+    getAccessToken: async () => 'tok',
+    fetch: async () => new Response(null, { status: 200 }),
+  })
+  const chunks = await collect(adapter.stream(baseOptions))
+  const finish = chunks.at(-1)
+  assert.equal(finish.type, 'finish')
+  assert.equal(finish.reason.kind, 'error')
+  assert.equal(finish.reason.failure.code, 'EMPTY_RESPONSE')
+})
+
 test('POSTs Responses to cli-chat-proxy with bearer', async () => {
   let url
   let method
