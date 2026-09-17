@@ -164,3 +164,74 @@ test('pinned OAuth URLs are first-party xAI endpoints', () => {
   assert.equal(XAI_OAUTH_TOKEN_URL, 'https://auth.x.ai/oauth2/token')
   assert.equal(XAI_OAUTH_DEVICE_URL, 'https://auth.x.ai/oauth2/device/code')
 })
+
+test('token POST sends User-Agent dsh-grok-provider', async () => {
+  let ua
+  const fetchImpl = async (_url, init) => {
+    const h = init.headers
+    ua = h?.['user-agent'] ?? h?.['User-Agent'] ?? h?.get?.('user-agent')
+    return jsonResponse({
+      access_token: 'acc',
+      refresh_token: 'ref',
+      expires_in: 60,
+      token_type: 'Bearer',
+    })
+  }
+  await refreshTokens({ refreshToken: 'r', fetch: fetchImpl })
+  assert.equal(ua, 'dsh-grok-provider')
+})
+
+test('exchangeCode throws OAuth error string and does not return TokenSet', async () => {
+  await assert.rejects(
+    () =>
+      exchangeCode({
+        code: 'bad',
+        verifier: 'v',
+        redirectUri: 'http://127.0.0.1:9/callback',
+        fetch: async () => jsonResponse({ error: 'invalid_grant', access_token: 'sneaky' }, 400),
+      }),
+    (err) => {
+      assert.match(String(err.message), /invalid_grant/)
+      return true
+    },
+  )
+})
+
+test('refreshTokens throws OAuth error string on payload.error even when HTTP 200', async () => {
+  await assert.rejects(
+    () =>
+      refreshTokens({
+        refreshToken: 'r',
+        fetch: async () => jsonResponse({ error: 'invalid_grant', access_token: 'sneaky' }, 200),
+      }),
+    /invalid_grant/,
+  )
+})
+
+test('pollDevice applies sticky slow_down interval then times out at 15 minutes', async () => {
+  const sleeps = []
+  let t = 0
+  let n = 0
+  const fetchImpl = async () => {
+    n += 1
+    if (n === 1) return jsonResponse({ error: 'slow_down' }, 400)
+    return jsonResponse({ error: 'authorization_pending' }, 400)
+  }
+  await assert.rejects(
+    () =>
+      pollDevice({
+        deviceCode: 'dev-to',
+        intervalMs: 100,
+        fetch: fetchImpl,
+        now: () => t,
+        sleep: async (ms) => {
+          sleeps.push(ms)
+          t += 15 * 60 * 1000 + 1
+        },
+      }),
+    /timed out|timeout|15/i,
+  )
+  assert.equal(sleeps[0], 5100)
+  assert.ok(sleeps.length >= 1)
+  assert.ok(n >= 1)
+})

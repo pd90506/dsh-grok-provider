@@ -2,6 +2,8 @@ import {
   XAI_OAUTH_AUTHORIZATION_URL,
   XAI_OAUTH_CLIENT_ID,
   XAI_OAUTH_DEVICE_GRANT_TYPE,
+  XAI_OAUTH_DEVICE_MAX_DURATION_MS,
+  XAI_OAUTH_DEVICE_SLOW_DOWN_MS,
   XAI_OAUTH_DEVICE_URL,
   XAI_OAUTH_TOKEN_URL,
 } from './constants.ts'
@@ -52,7 +54,16 @@ function tokenSetFromPayload(data: TokenPayload, fallbackRefresh?: string): Toke
   return token
 }
 
-async function postToken(fetchImpl: FetchLike, body: Record<string, string>, signal?: AbortSignal): Promise<TokenPayload> {
+function oauthErrorMessage(data: TokenPayload, status: number): string {
+  if (typeof data.error === 'string' && data.error) return data.error
+  return `xAI token request failed with status ${status}`
+}
+
+async function postToken(
+  fetchImpl: FetchLike,
+  body: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; status: number; data: TokenPayload }> {
   const response = await fetchImpl(XAI_OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: headers(),
@@ -69,7 +80,17 @@ async function postToken(fetchImpl: FetchLike, body: Record<string, string>, sig
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new Error('xAI token request returned invalid JSON')
   }
-  return payload as TokenPayload
+  return { ok: response.ok, status: response.status, data: payload as TokenPayload }
+}
+
+function requireTokenSet(
+  result: { ok: boolean; status: number; data: TokenPayload },
+  fallbackRefresh?: string,
+): TokenSet {
+  if (!result.ok || result.data.error) {
+    throw new Error(oauthErrorMessage(result.data, result.status))
+  }
+  return tokenSetFromPayload(result.data, fallbackRefresh)
 }
 
 export async function exchangeCode(options: {
@@ -78,26 +99,29 @@ export async function exchangeCode(options: {
   redirectUri: string
   fetch: FetchLike
 }): Promise<TokenSet> {
-  const data = await postToken(options.fetch, {
-    grant_type: 'authorization_code',
-    code: options.code,
-    redirect_uri: options.redirectUri,
-    client_id: XAI_OAUTH_CLIENT_ID,
-    code_verifier: options.verifier,
-  })
-  return tokenSetFromPayload(data)
+  return requireTokenSet(
+    await postToken(options.fetch, {
+      grant_type: 'authorization_code',
+      code: options.code,
+      redirect_uri: options.redirectUri,
+      client_id: XAI_OAUTH_CLIENT_ID,
+      code_verifier: options.verifier,
+    }),
+  )
 }
 
 export async function refreshTokens(options: {
   refreshToken: string
   fetch: FetchLike
 }): Promise<TokenSet> {
-  const data = await postToken(options.fetch, {
-    grant_type: 'refresh_token',
-    refresh_token: options.refreshToken,
-    client_id: XAI_OAUTH_CLIENT_ID,
-  })
-  return tokenSetFromPayload(data, options.refreshToken)
+  return requireTokenSet(
+    await postToken(options.fetch, {
+      grant_type: 'refresh_token',
+      refresh_token: options.refreshToken,
+      client_id: XAI_OAUTH_CLIENT_ID,
+    }),
+    options.refreshToken,
+  )
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -123,11 +147,19 @@ export async function pollDevice(options: {
   intervalMs: number
   fetch: FetchLike
   signal?: AbortSignal
+  now?: () => number
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
 }): Promise<TokenSet> {
-  const interval = Math.max(0, options.intervalMs)
+  const wait = options.sleep ?? sleep
+  const now = options.now ?? Date.now
+  const started = now()
+  let interval = Math.max(0, options.intervalMs)
   for (;;) {
     if (options.signal?.aborted) throw options.signal.reason ?? new Error('aborted')
-    const data = await postToken(
+    if (now() - started >= XAI_OAUTH_DEVICE_MAX_DURATION_MS) {
+      throw new Error('xAI device authorization timed out after 15 minutes')
+    }
+    const result = await postToken(
       options.fetch,
       {
         grant_type: XAI_OAUTH_DEVICE_GRANT_TYPE,
@@ -136,11 +168,19 @@ export async function pollDevice(options: {
       },
       options.signal,
     )
-    if (data.error === 'authorization_pending' || data.error === 'slow_down') {
-      await sleep(data.error === 'slow_down' ? interval + 5000 : interval, options.signal)
+    const { data } = result
+    if (data.error === 'slow_down') {
+      interval += XAI_OAUTH_DEVICE_SLOW_DOWN_MS
+      await wait(interval, options.signal)
       continue
     }
-    if (data.error) throw new Error(data.error)
+    if (data.error === 'authorization_pending') {
+      await wait(interval, options.signal)
+      continue
+    }
+    if (!result.ok || data.error) {
+      throw new Error(oauthErrorMessage(data, result.status))
+    }
     return tokenSetFromPayload(data)
   }
 }

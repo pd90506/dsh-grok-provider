@@ -20,6 +20,8 @@ export const XAI_OAUTH_CLIENT_ID = 'b1a00492-073a-47ea-816f-4c329264a828'
 export const XAI_OAUTH_SCOPE =
   'openid profile email offline_access grok-cli:access api:access conversations:read conversations:write'
 export const XAI_OAUTH_DEVICE_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code'
+export const XAI_OAUTH_DEVICE_SLOW_DOWN_MS = 5_000
+export const XAI_OAUTH_DEVICE_MAX_DURATION_MS = 15 * 60 * 1000
 export const XAI_GROK_CLI_AUTH_SCOPE_KEY = `${XAI_OAUTH_ISSUER}::${XAI_OAUTH_CLIENT_ID}`
 export const XAI_GROK_CLI_LEGACY_AUTH_SCOPE_KEY = 'https://accounts.x.ai/sign-in'
 export const PLUGIN_AUTH_DIR = '.dsh-grok-provider'
