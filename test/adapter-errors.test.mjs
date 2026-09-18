@@ -47,6 +47,41 @@ test('listModels uses fallback when cache is empty and merges grok-4.6 fallback 
   assert.equal(resolved.reasoning.defaultEffort, 'high')
 })
 
+test('resolveModel uses catalog reasoning efforts and does not copy grok-4.6 fallback onto grok-4.5', async () => {
+  const cache = new CatalogCache()
+  cache.set(
+    [
+      {
+        id: 'grok-4.5',
+        name: 'Grok 4.5',
+        contextWindow: 131072,
+        reasoningEfforts: ['low', 'high'],
+        defaultEffort: 'high',
+        input: ['text'],
+      },
+    ],
+    Date.now(),
+  )
+  const adapter = new GrokAdapter({ getAccessToken: async () => 'tok', catalog: cache })
+  const resolved = await adapter.resolveModel('grok', 'grok-4.5')
+  assert.deepEqual(
+    resolved.reasoning.efforts.map((e) => e.id),
+    ['low', 'high'],
+  )
+  assert.equal(resolved.reasoning.defaultEffort, 'high')
+})
+
+test('resolveModel omits reasoning when the catalog model has no official efforts', async () => {
+  const cache = new CatalogCache()
+  cache.set(
+    [{ id: 'grok-4.5', name: 'Grok 4.5', contextWindow: 131072, reasoningEfforts: [], input: ['text'] }],
+    Date.now(),
+  )
+  const adapter = new GrokAdapter({ getAccessToken: async () => 'tok', catalog: cache })
+  const resolved = await adapter.resolveModel('grok', 'grok-4.5')
+  assert.equal(resolved.reasoning, undefined)
+})
+
 test('listModels prefers cache entries and still merges grok-4.6 fallback fields', async () => {
   const cache = new CatalogCache()
   cache.set(

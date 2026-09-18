@@ -35,6 +35,23 @@ test('normalizeModelsV2 drops grok-build-0.1 and invalid ids', () => {
   )
 })
 
+test('normalizeModelsV2 reads official reasoning_efforts objects with value fields', () => {
+  const models = normalizeModelsV2({
+    data: [
+      {
+        id: 'grok-4.5',
+        name: 'Grok 4.5',
+        context_window: 131072,
+        reasoning_efforts: [{ value: 'low' }, { value: 'medium' }, { value: 'high' }],
+        default_effort: 'medium',
+      },
+    ],
+  })
+  assert.equal(models.length, 1)
+  assert.deepEqual(models[0].reasoningEfforts, ['low', 'medium', 'high'])
+  assert.equal(models[0].defaultEffort, 'medium')
+})
+
 test('fallbackCatalog is a single grok-4.6 entry with expected shape', () => {
   const catalog = fallbackCatalog()
   assert.equal(catalog.length, 1)

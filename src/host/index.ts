@@ -21,9 +21,10 @@ import {
   requestDeviceCode,
 } from './oauth.ts'
 import { generateOAuthState, generatePkce, parseRedirectUrl } from './pkce.ts'
+import { dispatchGrokRpc, GROK_RPC_ENDPOINTS, grokRpcPath, handleGrokRpcFetch } from './rpc-http.ts'
 
 export const name = PLUGIN_NAME
-export const inject = ['llm', 'settings'] as const
+export const inject = ['llm', 'settings', 'connection'] as const
 
 export const Config = Schema.object({
   streamIdleTimeoutMs: Schema.number().default(STREAM_IDLE_TIMEOUT_MS),
@@ -41,16 +42,6 @@ export type GrokPublicStatus = {
   deviceUserCode?: string
   deviceVerificationUri?: string
   authorizationUrl?: string
-}
-
-type RpcResult = { ok: true; value: unknown } | { ok: false; error: { code: string; message: string; details: object } }
-
-function ok(value: unknown): RpcResult {
-  return { ok: true, value }
-}
-
-function fail(code: string, message: string): RpcResult {
-  return { ok: false, error: { code, message, details: {} } }
 }
 
 function openBrowser(url: string): void {
@@ -256,11 +247,6 @@ export class GrokSession {
   }
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  return value as Record<string, unknown>
-}
-
 export function apply(ctx: Context, config: Config) {
   const idleTimeoutMs = config.streamIdleTimeoutMs ?? STREAM_IDLE_TIMEOUT_MS
   const session = new GrokSession()
@@ -277,35 +263,20 @@ export function apply(ctx: Context, config: Config) {
   ctx.effect(() => () => {
     session.dispose()
   })
-  ctx.inject(['connection'], (wired) => {
-    ctx.effect(() =>
-      wired.connection.rpc.intercept(
-        '/api',
-        (endpoint) => endpoint.startsWith('llm-grok/'),
-        async (endpoint, payload) => {
-          try {
-            if (endpoint === 'llm-grok/status') return ok(await session.snapshot())
-            if (endpoint === 'llm-grok/login-browser') return ok(await session.startBrowserLogin())
-            if (endpoint === 'llm-grok/login-device') return ok(await session.startDeviceLogin())
-            if (endpoint === 'llm-grok/complete-browser') {
-              const url = asRecord(payload).url
-              if (typeof url !== 'string') return fail('INVALID_REQUEST', 'complete-browser requires url')
-              return ok(await session.completeBrowserRedirect(url))
-            }
-            if (endpoint === 'llm-grok/logout') return ok(await session.logout())
-            if (endpoint === 'llm-grok/reuse-cli') return ok(await session.reuseCli())
-            if (endpoint === 'llm-grok/refresh-catalog') {
-              await session.refreshCatalog()
-              return ok(await session.snapshot())
-            }
-            return fail('NOT_FOUND', `unknown endpoint ${endpoint}`)
-          } catch (err) {
-            const message = err instanceof Error ? err.message : 'request failed'
-            session.lastError = message
-            return fail('GROK', message)
-          }
-        },
-      ),
+  // `/api` RPC intercept is exclusive to the Typert gateway. Feature plugins
+  // must register exact Fetch routes so browser `rpc.call('/api', endpoint)`
+  // POSTs to `/api/<endpoint>` instead of 404ing on the gateway matcher.
+  for (const endpoint of GROK_RPC_ENDPOINTS) {
+    ctx.effect(
+      () =>
+        ctx.connection.fetch.register({
+          path: grokRpcPath(endpoint),
+          methods: ['POST'],
+          requestBody: 'buffered',
+          fetch: (request) =>
+            handleGrokRpcFetch(request, endpoint, (owned, payload) => dispatchGrokRpc(session, owned, payload)),
+        }),
+      `llm-grok: ${endpoint}`,
     )
-  })
+  }
 }

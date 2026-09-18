@@ -31,7 +31,7 @@ function mergeFallback(model: GrokModel): GrokModel {
 function listing(cache?: CatalogCache): GrokModel[] {
   const cached = cache?.get()
   const models = cached && cached.length > 0 ? cached : fallbackCatalog()
-  return models.map((model) => (model.id === 'grok-4.6' ? mergeFallback(model) : model))
+  return models.map(mergeFallback)
 }
 
 export class GrokAdapter extends LlmAdapter {
@@ -67,22 +67,36 @@ export class GrokAdapter extends LlmAdapter {
     if (!found) {
       throw new LlmError(`unsupported model ${model}`, 'UNSUPPORTED')
     }
-    return found.id === 'grok-4.6' ? mergeFallback(found) : found
+    return mergeFallback(found)
   }
 
   override async resolveModel(provider: string, model: string) {
     const resolved = this.#requireModel(model)
-    return {
+    const info: {
+      provider: string
+      id: string
+      name: string
+      inputModalities: GrokModel['input']
+      context: { contextWindow: number }
+      reasoning?: { efforts: Array<{ id: string; name: string }>; defaultEffort?: string }
+    } = {
       provider,
       id: resolved.id,
       name: resolved.name,
       inputModalities: resolved.input,
       context: { contextWindow: resolved.contextWindow },
-      reasoning: {
-        efforts: resolved.reasoningEfforts.map((id) => ({ id, name: id })),
-        ...(resolved.defaultEffort ? { defaultEffort: resolved.defaultEffort } : {}),
-      },
     }
+    if (resolved.reasoningEfforts.length > 0) {
+      const defaultEffort =
+        resolved.defaultEffort && resolved.reasoningEfforts.includes(resolved.defaultEffort)
+          ? resolved.defaultEffort
+          : undefined
+      info.reasoning = {
+        efforts: resolved.reasoningEfforts.map((id) => ({ id, name: id })),
+        ...(defaultEffort ? { defaultEffort } : {}),
+      }
+    }
+    return info
   }
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {

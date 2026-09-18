@@ -20,6 +20,7 @@ const extraHostModules = [
   'transport',
   'adapter',
   'identity',
+  'rpc-http',
 ]
 
 await mkdir(dirname(hostOut), { recursive: true })
@@ -68,6 +69,15 @@ try {
   }
 }
 
+const clientBanner = `window.__ModuleLoader__.load({
+	id: "dsh-grok-provider",
+	factory: (require) => {
+		var module = { exports: {} };
+		var exports = module.exports;`
+const clientFooter = `		return module.exports;
+	}
+});`
+
 if (clientEntry) {
   await esbuild.build({
     absWorkingDir: root,
@@ -75,17 +85,23 @@ if (clientEntry) {
     outfile: clientOut,
     bundle: true,
     platform: 'browser',
-    format: 'esm',
+    format: 'cjs',
     target: 'es2022',
     sourcemap: true,
     logLevel: 'info',
     jsx: 'automatic',
     external: ['react', 'react/jsx-runtime', '@deepseek-ai/cordis'],
+    banner: { js: clientBanner },
+    footer: { js: clientFooter },
   })
 } else {
   await writeFile(
     clientOut,
-    'export const name = "llm-grok-client"\nexport function apply() {}\n',
+    `${clientBanner}
+exports.name = "llm-grok-client"
+exports.apply = function apply() {}
+${clientFooter}
+`,
     'utf8',
   )
 }

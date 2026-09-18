@@ -42,9 +42,28 @@ function asInput(value: unknown): Array<'text' | 'image'> {
   return out
 }
 
+function effortId(item: unknown): string | undefined {
+  if (typeof item === 'string' && item.length > 0) return item
+  const rec = asRecord(item)
+  if (!rec) return undefined
+  for (const key of ['value', 'id', 'effort'] as const) {
+    const raw = rec[key]
+    if (typeof raw === 'string' && raw.length > 0) return raw
+  }
+  return undefined
+}
+
 function asEfforts(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    const id = effortId(item)
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
 }
 
 function normalizeOne(entry: unknown): GrokModel | undefined {

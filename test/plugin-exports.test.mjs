@@ -3,11 +3,12 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+import vm from 'node:vm'
 
 test('host export name is llm-grok and Config defaults streamIdleTimeoutMs', async () => {
   const mod = await import(new URL('../dist/host/index.mjs', import.meta.url).href)
   assert.equal(mod.name, 'llm-grok')
-  assert.deepEqual([...mod.inject], ['llm', 'settings'])
+  assert.deepEqual([...mod.inject], ['llm', 'settings', 'connection'])
   const parsed = mod.Config({})
   assert.equal(parsed.streamIdleTimeoutMs, 300000)
 })
@@ -30,9 +31,9 @@ test('apply registers GrokAdapter on grok and installs settings section', async 
       },
     },
     connection: {
-      rpc: {
-        intercept(channel, matches, handler) {
-          calls.push({ channel, matches: matches('llm-grok/status'), handler: typeof handler })
+      fetch: {
+        register(route) {
+          calls.push({ path: route.path, methods: [...route.methods] })
           return () => {}
         },
       },
@@ -48,8 +49,9 @@ test('apply registers GrokAdapter on grok and installs settings section', async 
   assert.equal(calls[0].providers[0], 'grok')
   assert.equal(calls[0].adapterName, 'GrokAdapter')
   assert.equal(calls[1].ns, 'llm-grok')
-  assert.equal(calls[2].channel, '/api')
-  assert.equal(calls[2].matches, true)
+  const paths = calls.filter((call) => call.path).map((call) => call.path)
+  assert.ok(paths.includes('/api/llm-grok/login-device'))
+  assert.ok(paths.includes('/api/llm-grok/status'))
 })
 
 test('client bundle registers Grok settings and never mentions access tokens', async () => {
@@ -63,6 +65,43 @@ test('client bundle registers Grok settings and never mentions access tokens', a
   assert.match(src, /Authorization URL/)
   assert.doesNotMatch(src, /accessToken|refreshToken|access_token/)
   assert.match(src, /loginPending|setInterval/)
+  assert.match(src, /grok-settings/)
+  assert.match(src, /--dsw-alias-button-primary-fill/)
+})
+
+test('client bundle registers via __ModuleLoader__ with no top-level import', async () => {
+  const bundleUrl = new URL('../dist/client/client.js', import.meta.url)
+  const src = await readFile(bundleUrl, 'utf8')
+  assert.match(src, /window\.__ModuleLoader__\.load\(/)
+  assert.doesNotMatch(src, /^\s*import\s/m)
+
+  let definition
+  vm.runInNewContext(
+    src,
+    { window: { __ModuleLoader__: { load(value) { definition = value } } } },
+    { filename: bundleUrl.pathname },
+  )
+  assert.equal(definition?.id, 'dsh-grok-provider')
+  assert.equal(typeof definition?.factory, 'function')
+
+  const react = {
+    useCallback: (cb) => cb,
+    useEffect: () => {},
+    useState: (initial) => [initial, () => {}],
+  }
+  const jsxRuntime = {
+    Fragment: Symbol('Fragment'),
+    jsx: (type, props) => ({ type, props: props ?? {} }),
+    jsxs: (type, props) => ({ type, props: props ?? {} }),
+  }
+  const clientModule = definition.factory((id) => {
+    if (id === 'react') return react
+    if (id === 'react/jsx-runtime') return jsxRuntime
+    throw new Error(`unexpected client dependency: ${id}`)
+  })
+  assert.equal(clientModule.name, 'llm-grok-client')
+  assert.deepEqual([...clientModule.inject], ['slots', 'connection'])
+  assert.equal(typeof clientModule.apply, 'function')
 })
 
 test('logout stays logged out even when ~/.grok/auth.json exists until reuse-cli', async () => {
